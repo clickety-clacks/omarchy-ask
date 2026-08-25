@@ -2,6 +2,8 @@
 
 A focused, ephemeral conversation overlay for [Omarchy](https://omarchy.org/). Open it with a global shortcut, type a request, and talk to Claude Code or Codex through the Agent Client Protocol (ACP). Closing the overlay discards the conversation.
 
+![Omarchy Ask showing a conversation with an agent](assets/omarchy-ask.png)
+
 The interface uses large serif typography for the prompt, smaller Markdown-rendered assistant responses, selectable conversation text, animated growth as replies arrive, streaming output, tool-status updates, and interactive ACP permission requests. Prompt type scales down as it gains visual lines.
 
 ## Requirements
