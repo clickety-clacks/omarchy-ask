@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "clickety-clacks.ask",
+  "name": "Ask",
+  "version": "0.1.0",
+  "author": "Clickety Clacks",
+  "license": "MIT",
+  "description": "A transient conversation with the default local coding agent.",
+  "kinds": ["overlay"],
+  "keepLoaded": true,
+  "entryPoints": { "overlay": "Ask.qml" }
+}

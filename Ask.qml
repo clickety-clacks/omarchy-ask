@@ -1,0 +1,463 @@
+import QtQuick
+import QtQuick.Controls
+import Quickshell
+import Quickshell.Io
+import Quickshell.Wayland
+import qs.Commons
+import qs.Ui
+
+Item {
+  id: root
+  property bool opened: false
+  property bool layoutReady: false
+  property bool waiting: false
+  property bool bridgeReady: false
+  property bool sessionLost: false
+  property string statusText: ""
+  property int activeReply: -1
+  property string queuedPrompt: ""
+  property string pendingPermissionId: ""
+
+  readonly property color background: Color.menu.background
+  readonly property color foreground: Color.menu.text
+  readonly property color border: Color.menu.border
+  readonly property color accent: Color.accent
+  readonly property color scrim: Color.menu.scrim
+  readonly property string conversationFont: "Noto Serif"
+  readonly property int agentSize: Math.round(Style.font.body * 1.34)
+  readonly property int humanSize: Math.round(Style.font.body * 2.36)
+
+  function humanSizeFor(text) {
+    // Keep short prompts display-sized, but react quickly once they begin to
+    // wrap. Newlines count extra because they consume vertical space even
+    // when the raw character count is low. Assistant size is the hard floor.
+    var value = String(text || "")
+    var newlines = (value.match(/\n/g) || []).length
+    var visualLength = value.length + newlines * 32
+    var progress = Math.max(0, Math.min(1, (visualLength - 24) / 216))
+    return Math.round(humanSize - (humanSize - agentSize) * progress)
+  }
+
+  function open(payloadJson) {
+    layoutReady = false
+    card.opacity = 0
+    veil.opacity = 0
+    opened = true
+    entranceTimer.restart()
+    agent.running = true
+  }
+
+  function close() {
+    agent.running = false
+    entranceTimer.stop()
+    cardFade.stop()
+    veilFade.stop()
+    card.opacity = 0
+    veil.opacity = 0
+    layoutReady = false
+    opened = false
+    waiting = false
+    bridgeReady = false
+    sessionLost = false
+    queuedPrompt = ""
+    pendingPermissionId = ""
+    statusText = ""
+    activeReply = -1
+    prompt.text = ""
+    messages.clear()
+  }
+
+  function toggle() { opened ? close() : open("{}") }
+
+  function scrollToEnd() {
+    horizontalScroll.stop()
+    verticalScroll.stop()
+    // Let the border absorb ordinary growth. Only scroll once the surface has
+    // reached its height cap; scrolling during the growth animation makes the
+    // entire conversation appear to jump or redraw.
+    if (card.height < card.maxHeight - 1) {
+      surface.contentY = 0
+      return
+    }
+    var overflow = surface.contentHeight - surface.height
+    surface.contentY = overflow > 0 ? overflow : 0
+  }
+
+  function scrollBy(dx, dy) {
+    var maxX = Math.max(0, surface.contentWidth - surface.width)
+    var maxY = Math.max(0, surface.contentHeight - surface.height)
+    var nextX = Math.max(0, Math.min(maxX, surface.contentX + dx))
+    var nextY = Math.max(0, Math.min(maxY, surface.contentY + dy))
+    if (nextX !== surface.contentX) {
+      horizontalScroll.stop()
+      horizontalScroll.from = surface.contentX
+      horizontalScroll.to = nextX
+      horizontalScroll.start()
+    }
+    if (nextY !== surface.contentY) {
+      verticalScroll.stop()
+      verticalScroll.from = surface.contentY
+      verticalScroll.to = nextY
+      verticalScroll.start()
+    }
+  }
+
+  function scrollLine(dx, dy) {
+    scrollBy(dx * Style.space(44), dy * Style.space(44))
+  }
+
+  function scrollPage(direction) {
+    scrollBy(0, direction * Math.max(Style.space(44), surface.height * 0.85))
+  }
+
+  function submit() {
+    var text = prompt.text.trim()
+    if (text === "" || waiting || sessionLost) return
+    waiting = true
+    statusText = "Thinking…"
+    queuedPrompt = text
+    prompt.text = ""
+    messages.append({ role: "You", body: text })
+    activeReply = messages.count
+    messages.append({ role: "Claude", body: "" })
+    if (bridgeReady) sendQueuedPrompt()
+    else statusText = "Starting agent…"
+  }
+
+  function sendQueuedPrompt() {
+    if (queuedPrompt === "" || !agent.running || !bridgeReady) return
+    agent.write(JSON.stringify({
+      type: "prompt",
+      text: queuedPrompt
+    }) + "\n")
+    queuedPrompt = ""
+  }
+
+  function appendReply(text) {
+    if (activeReply < 0 || activeReply >= messages.count || text === "") return
+    messages.setProperty(activeReply, "body", (messages.get(activeReply).body || "") + text)
+    Qt.callLater(root.scrollToEnd)
+  }
+
+  function handleAgentLine(rawLine) {
+    var line = String(rawLine || "").trim()
+    if (line === "") return
+    try {
+      var event = JSON.parse(line)
+      if (event.type === "ready") {
+        bridgeReady = true
+        statusText = queuedPrompt === "" ? "" : "Thinking…"
+        sendQueuedPrompt()
+      } else if (event.type === "text") {
+        appendReply(String(event.text || ""))
+        statusText = "Replying…"
+      } else if (event.type === "done") {
+        waiting = false
+        statusText = ""
+        activeReply = -1
+        pendingPermissionId = ""
+        Qt.callLater(function() { prompt.forceActiveFocus() })
+      } else if (event.type === "status") {
+        statusText = String(event.text || "Working…")
+      } else if (event.type === "tool") {
+        var toolTitle = String(event.title || "Using a tool")
+        var toolStatus = String(event.status || "in_progress")
+        statusText = toolStatus === "completed" ? "Thinking…" : toolTitle
+      } else if (event.type === "permission") {
+        pendingPermissionId = String(event.id || "")
+        statusText = String(event.title || "Allow tool?") + " · Y allow · N deny"
+      } else if (event.type === "error") {
+        waiting = false
+        activeReply = -1
+        statusText = String(event.message || "Agent error")
+        Qt.callLater(function() { prompt.forceActiveFocus() })
+      } else if (event.type === "fatal") {
+        bridgeReady = false
+        sessionLost = true
+        waiting = false
+        activeReply = -1
+        statusText = String(event.message || "Session lost") + " · close to restart"
+      }
+    } catch (error) {}
+  }
+
+  function answerPermission(allow) {
+    if (pendingPermissionId === "" || !agent.running) return
+    agent.write(JSON.stringify({
+      type: "permission",
+      id: pendingPermissionId,
+      allow: allow
+    }) + "\n")
+    pendingPermissionId = ""
+    statusText = allow ? "Working…" : "Tool denied"
+  }
+
+  ListModel { id: messages }
+
+  // Layer-shell geometry arrives asynchronously from the compositor. Keep the
+  // overlay fully transparent until that handshake has settled, then reveal
+  // the already measured, centered card with opacity alone.
+  Timer {
+    id: entranceTimer
+    interval: 400
+    repeat: false
+    onTriggered: {
+      root.layoutReady = true
+      prompt.forceActiveFocus()
+      cardFade.restart()
+      veilFade.restart()
+    }
+  }
+
+  Process {
+    id: agent
+    command: [
+      "env", "HUGINN_INTERNAL=1",
+      "node", Quickshell.env("HOME") + "/.config/omarchy/plugins/clickety-clacks.ask/bridge/bridge.js"
+    ]
+    stdinEnabled: true
+    onExited: function(code) {
+      root.bridgeReady = false
+      if (!root.opened) return
+      root.waiting = false
+      root.activeReply = -1
+      root.sessionLost = true
+      root.statusText = "ACP session ended · close to restart"
+    }
+    stdout: SplitParser { onRead: function(line) { root.handleAgentLine(line) } }
+    stderr: SplitParser {
+      onRead: function(line) {
+        // The bridge keeps its machine-readable UI stream on stdout. stderr
+        // is reserved for bridge-level diagnostics and is intentionally quiet.
+      }
+    }
+  }
+
+  PanelWindow {
+    id: panel
+    visible: root.opened
+    anchors { top: true; bottom: true; left: true; right: true }
+    color: "transparent"
+    WlrLayershell.namespace: "omarchy-ask"
+    WlrLayershell.layer: WlrLayer.Overlay
+    WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
+    exclusionMode: ExclusionMode.Ignore
+
+    Shortcut { sequence: "Escape"; onActivated: root.close() }
+    Shortcut { sequence: "Up"; onActivated: root.scrollLine(0, -1) }
+    Shortcut { sequence: "Down"; onActivated: root.scrollLine(0, 1) }
+    Shortcut { sequence: "Left"; onActivated: root.scrollLine(-1, 0) }
+    Shortcut { sequence: "Right"; onActivated: root.scrollLine(1, 0) }
+    Shortcut { sequence: "Ctrl+H"; onActivated: root.scrollLine(-1, 0) }
+    Shortcut { sequence: "Ctrl+J"; onActivated: root.scrollLine(0, 1) }
+    Shortcut { sequence: "Ctrl+K"; onActivated: root.scrollLine(0, -1) }
+    Shortcut { sequence: "Ctrl+L"; onActivated: root.scrollLine(1, 0) }
+    Shortcut { sequence: "Ctrl+U"; onActivated: root.scrollPage(-1) }
+    Shortcut { sequence: "Ctrl+D"; onActivated: root.scrollPage(1) }
+    Shortcut { sequence: "PageUp"; onActivated: root.scrollPage(-1) }
+    Shortcut { sequence: "PageDown"; onActivated: root.scrollPage(1) }
+    Shortcut {
+      sequence: "Y"
+      enabled: root.pendingPermissionId !== ""
+      onActivated: root.answerPermission(true)
+    }
+    Shortcut {
+      sequence: "N"
+      enabled: root.pendingPermissionId !== ""
+      onActivated: root.answerPermission(false)
+    }
+    Rectangle {
+      id: veil
+      anchors.fill: parent
+      color: root.scrim
+      visible: root.layoutReady
+      opacity: 0
+    }
+    NumberAnimation { id: veilFade; target: veil; property: "opacity"; from: 0; to: 1; duration: 150; easing.type: Easing.OutQuad }
+    MouseArea { anchors.fill: parent; onClicked: root.close() }
+
+    BorderSurface {
+      id: card
+      readonly property int maxHeight: Math.min(Style.space(560), panel.height - Style.gapsOut * 2)
+      readonly property int frameInset: Style.spacing.panelPadding * 2
+      width: Math.min(Style.space(540), panel.width - Style.gapsOut * 2)
+      height: Math.min(maxHeight, stack.height + frameInset)
+      anchors.horizontalCenter: parent.horizontalCenter
+      y: Math.max(Style.gapsOut, Math.round((panel.height - height) / 2))
+      color: root.background
+      visible: root.layoutReady
+      radius: Style.cornerRadius
+      borderSpec: Border.surfaceSpec("menu", "border", root.border, Math.max(1, Style.space(2)))
+      padding: Style.spacing.panelPadding
+      opacity: 0
+      Behavior on height {
+        enabled: root.layoutReady
+        NumberAnimation { duration: 280; easing.type: Easing.OutCubic }
+      }
+      MouseArea { anchors.fill: parent; onClicked: prompt.forceActiveFocus() }
+
+      Flickable {
+        id: surface
+        anchors.fill: parent
+        anchors.margins: Style.spacing.panelPadding
+        clip: true
+        contentWidth: width
+        contentHeight: stack.height
+        interactive: contentHeight > height
+        boundsBehavior: Flickable.StopAtBounds
+
+        NumberAnimation {
+          id: horizontalScroll
+          target: surface
+          property: "contentX"
+          duration: 170
+          easing.type: Easing.OutCubic
+        }
+        NumberAnimation {
+          id: verticalScroll
+          target: surface
+          property: "contentY"
+          duration: 170
+          easing.type: Easing.OutCubic
+        }
+
+        Column {
+          id: stack
+          width: surface.width
+          spacing: Style.space(4)
+
+          Repeater {
+            model: messages
+            Item {
+              id: turn
+              required property string role
+              required property string body
+              readonly property bool human: role === "You"
+              width: stack.width
+              height: human ? humanText.contentHeight : (body === "" ? 0 : agentText.contentHeight)
+
+              TextEdit {
+                id: humanText
+                visible: turn.human
+                width: parent.width
+                height: contentHeight
+                text: turn.body
+                color: root.accent
+                font.family: root.conversationFont
+                font.pixelSize: root.humanSizeFor(turn.body)
+                font.italic: true
+                wrapMode: TextEdit.Wrap
+                textFormat: TextEdit.PlainText
+                readOnly: true
+                selectByMouse: true
+                selectionColor: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.32)
+                selectedTextColor: root.foreground
+              }
+              TextEdit {
+                id: agentText
+                visible: !turn.human
+                width: parent.width
+                height: contentHeight
+                text: turn.body
+                color: root.foreground
+                font.family: root.conversationFont
+                font.pixelSize: root.agentSize
+                wrapMode: TextEdit.Wrap
+                textFormat: TextEdit.MarkdownText
+                readOnly: true
+                selectByMouse: true
+                selectionColor: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.32)
+                selectedTextColor: root.foreground
+              }
+            }
+          }
+
+          Item {
+            id: pulse
+            width: stack.width
+            visible: root.waiting || root.statusText !== ""
+            height: visible ? Math.max(dot.height, statusLabel.implicitHeight) : 0
+            Rectangle {
+              id: dot
+              anchors.verticalCenter: parent.verticalCenter
+              width: Style.space(6)
+              height: width
+              radius: width / 2
+              color: root.accent
+              SequentialAnimation on opacity {
+                running: pulse.visible
+                loops: Animation.Infinite
+                NumberAnimation { from: 0.22; to: 1; duration: 620 }
+                NumberAnimation { from: 1; to: 0.22; duration: 620 }
+              }
+            }
+            Text {
+              id: statusLabel
+              x: Style.space(12)
+              width: parent.width - x
+              anchors.verticalCenter: parent.verticalCenter
+              text: root.statusText
+              color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.42)
+              font.family: Style.font.family
+              font.pixelSize: Style.font.caption
+              elide: Text.ElideRight
+            }
+          }
+
+          Item {
+            id: composer
+            width: stack.width
+            visible: !root.waiting
+            height: visible ? Math.max(Style.space(54), prompt.contentHeight + Style.space(6)) : 0
+
+            // Measure wrapping at the full display size. This gives the font
+            // rule a stable visual-line count instead of making the resized
+            // editor feed back into its own measurement.
+            Text {
+              id: promptMeasure
+              visible: false
+              width: composer.width
+              text: prompt.text
+              font.family: root.conversationFont
+              font.pixelSize: root.humanSize
+              font.italic: true
+              wrapMode: Text.Wrap
+              textFormat: Text.PlainText
+            }
+
+            TextArea {
+              id: prompt
+              // Stay display-sized for one visual line, then reach assistant
+              // size at seven lines. Explicit newlines and natural wraps count.
+              readonly property real shrinkProgress: Math.max(0, Math.min(1, (promptMeasure.lineCount - 1) / 6))
+              readonly property int responsiveFontSize: Math.round(root.humanSize - (root.humanSize - root.agentSize) * shrinkProgress)
+              width: parent.width
+              height: contentHeight
+              anchors.verticalCenter: parent.verticalCenter
+              padding: 0
+              color: root.accent
+              placeholderText: ""
+              font.family: root.conversationFont
+              font.pixelSize: responsiveFontSize
+              font.italic: true
+              wrapMode: TextEdit.Wrap
+              enabled: !root.waiting
+              background: null
+              opacity: root.waiting ? 0.45 : 1
+              onContentHeightChanged: Qt.callLater(root.scrollToEnd)
+              Keys.onPressed: function(event) {
+                if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
+                    && !(event.modifiers & Qt.ShiftModifier)) {
+                  root.submit()
+                  event.accepted = true
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    NumberAnimation { id: cardFade; target: card; property: "opacity"; from: 0; to: 1; duration: 150; easing.type: Easing.OutQuad }
+  }
+}
