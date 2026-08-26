@@ -50,6 +50,9 @@ The bridge starts one ACP session when the overlay opens and reuses it for every
 - `Y` / `N`: allow or deny a pending tool request
 - Pin icon: move the live conversation into a normal resizable window
 
+Pinned conversations remain open with their own agent sessions. Invoking the
+Ask shortcut again opens a fresh overlay instead of dismissing pinned windows.
+
 The mode switch at the top of the overlay is persistent. **Permission** asks
 before tools run; **YOLO** automatically accepts tool requests. Permission is
 the default until you explicitly select YOLO.

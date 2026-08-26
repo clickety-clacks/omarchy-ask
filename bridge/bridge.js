@@ -78,7 +78,7 @@ const client = {
     switch (update.sessionUpdate) {
       case "agent_message_chunk": {
         const text = messageText(update.content);
-        if (text) emit({ type: "text", text });
+        if (text) emit({ type: "text", text, messageId: update.messageId || "" });
         break;
       }
       case "tool_call":
