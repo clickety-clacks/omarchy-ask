@@ -19,6 +19,7 @@ Item {
   property string pendingPermissionId: ""
   property string pendingPermissionTitle: ""
   property var permissionQueue: []
+  property string permissionMode: "permission"
 
   readonly property color background: Color.menu.background
   readonly property color foreground: Color.menu.text
@@ -135,6 +136,15 @@ Item {
     queuedPrompt = ""
   }
 
+  function setPermissionMode(mode) {
+    var next = mode === "yolo" ? "yolo" : "permission"
+    permissionMode = next
+    if (next === "yolo") clearPermissions()
+    if (agent.running && bridgeReady) {
+      agent.write(JSON.stringify({ type: "permission_mode", mode: next }) + "\n")
+    }
+  }
+
   function appendReply(text) {
     if (activeReply < 0 || activeReply >= messages.count || text === "") return
     messages.setProperty(activeReply, "body", (messages.get(activeReply).body || "") + text)
@@ -176,6 +186,7 @@ Item {
       var event = JSON.parse(line)
       if (event.type === "ready") {
         bridgeReady = true
+        permissionMode = event.permissionMode === "yolo" ? "yolo" : "permission"
         statusText = queuedPrompt === "" ? "" : "Thinking…"
         sendQueuedPrompt()
       } else if (event.type === "text") {
@@ -195,6 +206,8 @@ Item {
         statusText = toolStatus === "completed" ? "Thinking…" : toolTitle
       } else if (event.type === "permission") {
         enqueuePermission(event.id, event.title)
+      } else if (event.type === "permission_mode") {
+        permissionMode = event.mode === "yolo" ? "yolo" : "permission"
       } else if (event.type === "error") {
         clearPermissions()
         waiting = false
@@ -359,6 +372,50 @@ Item {
           width: surface.width
           spacing: Style.space(4)
 
+          Row {
+            width: stack.width
+            spacing: Style.space(8)
+
+            Text {
+              width: parent.width - modeButtons.width - parent.spacing
+              anchors.verticalCenter: parent.verticalCenter
+              text: root.permissionMode === "yolo"
+                ? "YOLO mode · tools run automatically"
+                : "Permission mode · ask before tools"
+              color: root.permissionMode === "yolo"
+                ? root.accent
+                : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.55)
+              font.family: Style.font.family
+              font.pixelSize: Style.font.caption
+              elide: Text.ElideRight
+            }
+
+            Row {
+              id: modeButtons
+              spacing: Style.space(4)
+
+              Button {
+                text: "Permission"
+                bordered: true
+                selected: root.permissionMode === "permission"
+                foreground: root.permissionMode === "permission" ? root.accent : root.foreground
+                fontFamily: Style.font.family
+                fontSize: Style.font.caption
+                onClicked: root.setPermissionMode("permission")
+              }
+
+              Button {
+                text: "YOLO"
+                bordered: true
+                selected: root.permissionMode === "yolo"
+                foreground: root.permissionMode === "yolo" ? root.accent : root.foreground
+                fontFamily: Style.font.family
+                fontSize: Style.font.caption
+                onClicked: root.setPermissionMode("yolo")
+              }
+            }
+          }
+
           Repeater {
             model: messages
             Item {
@@ -401,6 +458,7 @@ Item {
                 selectByMouse: true
                 selectionColor: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.32)
                 selectedTextColor: root.foreground
+                onLinkActivated: function(link) { Qt.openUrlExternally(link) }
               }
             }
           }
@@ -479,6 +537,43 @@ Item {
               opacity: root.waiting ? 0.45 : 1
               onContentHeightChanged: Qt.callLater(root.scrollToEnd)
               Keys.onPressed: function(event) {
+                if (event.key === Qt.Key_Up) {
+                  root.scrollLine(0, -1)
+                  event.accepted = true
+                } else if (event.key === Qt.Key_Down) {
+                  root.scrollLine(0, 1)
+                  event.accepted = true
+                } else if (event.key === Qt.Key_Left) {
+                  root.scrollLine(-1, 0)
+                  event.accepted = true
+                } else if (event.key === Qt.Key_Right) {
+                  root.scrollLine(1, 0)
+                  event.accepted = true
+                } else if (event.key === Qt.Key_PageUp) {
+                  root.scrollPage(-1)
+                  event.accepted = true
+                } else if (event.key === Qt.Key_PageDown) {
+                  root.scrollPage(1)
+                  event.accepted = true
+                } else if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_K) {
+                  root.scrollLine(0, -1)
+                  event.accepted = true
+                } else if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_J) {
+                  root.scrollLine(0, 1)
+                  event.accepted = true
+                } else if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_H) {
+                  root.scrollLine(-1, 0)
+                  event.accepted = true
+                } else if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_L) {
+                  root.scrollLine(1, 0)
+                  event.accepted = true
+                } else if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_U) {
+                  root.scrollPage(-1)
+                  event.accepted = true
+                } else if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_D) {
+                  root.scrollPage(1)
+                  event.accepted = true
+                } else
                 if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
                     && !(event.modifiers & Qt.ShiftModifier)) {
                   root.submit()

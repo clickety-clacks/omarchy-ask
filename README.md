@@ -49,6 +49,10 @@ The bridge starts one ACP session when the overlay opens and reuses it for every
 - `Ctrl+V`: paste into the prompt
 - `Y` / `N`: allow or deny a pending tool request
 
+The mode switch at the top of the overlay is persistent. **Permission** asks
+before tools run; **YOLO** automatically accepts tool requests. Permission is
+the default until you explicitly select YOLO.
+
 ## Development
 
 Validate the plugin manifest with:

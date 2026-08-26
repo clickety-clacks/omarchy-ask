@@ -5,6 +5,7 @@ import { createInterface } from "node:readline";
 import { Readable, Writable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import {
   ClientSideConnection,
   PROTOCOL_VERSION,
@@ -20,6 +21,25 @@ const agentBinary = join(
   agentName === "codex" ? "codex-acp" : "claude-agent-acp",
 );
 const cwd = process.env.ASK_CWD || process.env.HOME || process.cwd();
+const settingsDir = join(process.env.HOME || process.cwd(), ".config", "omarchy");
+const settingsPath = join(settingsDir, "ask.json");
+
+let permissionMode = "permission";
+
+async function loadSettings() {
+  try {
+    const settings = JSON.parse(await readFile(settingsPath, "utf8"));
+    permissionMode = settings.permissionMode === "yolo" ? "yolo" : "permission";
+  } catch {}
+}
+
+async function savePermissionMode(mode) {
+  permissionMode = mode === "yolo" ? "yolo" : "permission";
+  await mkdir(settingsDir, { recursive: true });
+  await writeFile(settingsPath, `${JSON.stringify({ permissionMode }, null, 2)}\n`, {
+    mode: 0o600,
+  });
+}
 
 function emit(event) {
   process.stdout.write(`${JSON.stringify(event)}\n`);
@@ -87,6 +107,15 @@ const client = {
       label: option.name,
       kind: option.kind,
     }));
+    if (permissionMode === "yolo") {
+      const option = options.find((item) => item.kind === "allow_once")
+        || options.find((item) => item.kind.startsWith("allow"));
+      if (option) {
+        emit({ type: "status", text: `YOLO · ${title}` });
+        return Promise.resolve({ outcome: { outcome: "selected", optionId: option.id } });
+      }
+      return Promise.resolve({ outcome: { outcome: "cancelled" } });
+    }
     emit({ type: "permission", id: requestId, title, options });
     return new Promise((resolve) => {
       pendingPermissions.set(requestId, { resolve, options });
@@ -95,6 +124,7 @@ const client = {
 };
 
 async function start() {
+  await loadSettings();
   const stream = ndJsonStream(
     Writable.toWeb(child.stdin),
     Readable.toWeb(child.stdout),
@@ -111,6 +141,7 @@ async function start() {
     agent: agentName,
     sessionId,
     capabilities: initialized.agentCapabilities || {},
+    permissionMode,
   });
 }
 
@@ -147,6 +178,17 @@ function answerPermission(message) {
   emit({ type: "status", text: message.allow ? "Working…" : "Tool denied" });
 }
 
+function allowAllPendingPermissions() {
+  for (const [id, pending] of pendingPermissions.entries()) {
+    const option = pending.options.find((item) => item.kind === "allow_once")
+      || pending.options.find((item) => item.kind.startsWith("allow"));
+    pendingPermissions.delete(id);
+    pending.resolve(option
+      ? { outcome: { outcome: "selected", optionId: option.id } }
+      : { outcome: { outcome: "cancelled" } });
+  }
+}
+
 async function shutdown() {
   if (shuttingDown) return;
   shuttingDown = true;
@@ -177,6 +219,13 @@ input.on("line", (line) => {
     });
   } else if (message.type === "permission") {
     answerPermission(message);
+  } else if (message.type === "permission_mode") {
+    savePermissionMode(message.mode).then(() => {
+      if (permissionMode === "yolo") allowAllPendingPermissions();
+      emit({ type: "permission_mode", mode: permissionMode });
+    }).catch((error) => {
+      emit({ type: "error", message: `Could not save permission mode: ${error.message}` });
+    });
   } else if (message.type === "cancel" && connection && sessionId) {
     connection.cancel({ sessionId }).catch(() => {});
   } else if (message.type === "close") {
