@@ -13,6 +13,7 @@ Item {
   property bool waiting: false
   property bool bridgeReady: false
   property bool sessionLost: false
+  property bool pinned: false
   property string statusText: ""
   property int activeReply: -1
   property string queuedPrompt: ""
@@ -59,6 +60,7 @@ Item {
     veil.opacity = 0
     layoutReady = false
     opened = false
+    pinned = false
     waiting = false
     bridgeReady = false
     sessionLost = false
@@ -71,6 +73,12 @@ Item {
   }
 
   function toggle() { opened ? close() : open("{}") }
+
+  function pinConversation() {
+    if (!opened || pinned) return
+    pinned = true
+    Qt.callLater(function() { prompt.forceActiveFocus() })
+  }
 
   function scrollToEnd() {
     horizontalScroll.stop()
@@ -281,7 +289,7 @@ Item {
 
   PanelWindow {
     id: panel
-    visible: root.opened
+    visible: root.opened && !root.pinned
     anchors { top: true; bottom: true; left: true; right: true }
     color: "transparent"
     WlrLayershell.namespace: "omarchy-ask"
@@ -324,15 +332,16 @@ Item {
 
     BorderSurface {
       id: card
-      readonly property int maxHeight: Math.min(Style.space(560), panel.height - Style.gapsOut * 2)
+      parent: root.pinned ? pinnedWindow.contentItem : panel.contentItem
+      readonly property int maxHeight: Math.min(Style.space(560), parent.height - Style.gapsOut * 2)
       readonly property int frameInset: Style.spacing.panelPadding * 2
-      width: Math.min(Style.space(540), panel.width - Style.gapsOut * 2)
-      height: Math.min(maxHeight, stack.height + frameInset)
+      width: root.pinned ? parent.width : Math.min(Style.space(540), parent.width - Style.gapsOut * 2)
+      height: root.pinned ? parent.height : Math.min(maxHeight, stack.height + frameInset)
       anchors.horizontalCenter: parent.horizontalCenter
-      y: Math.max(Style.gapsOut, Math.round((panel.height - height) / 2))
+      y: root.pinned ? 0 : Math.max(Style.gapsOut, Math.round((parent.height - height) / 2))
       color: root.background
       visible: root.layoutReady
-      radius: Style.cornerRadius
+      radius: root.pinned ? 0 : Style.cornerRadius
       borderSpec: Border.surfaceSpec("menu", "border", root.border, Math.max(1, Style.space(2)))
       padding: Style.spacing.panelPadding
       opacity: 0
@@ -562,9 +571,35 @@ Item {
           onClicked: root.setPermissionMode(root.permissionMode === "yolo" ? "permission" : "yolo")
         }
       }
+
+      Text {
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.rightMargin: Style.space(10)
+        anchors.bottomMargin: Style.space(8)
+        visible: !root.pinned
+        text: "󰐃"
+        color: pinMouse.containsMouse
+          ? root.accent
+          : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.36)
+        font.family: "JetBrainsMono Nerd Font"
+        font.pixelSize: Style.font.body
+        z: 10
+
+        MouseArea {
+          id: pinMouse
+          anchors.fill: parent
+          anchors.margins: -Style.space(7)
+          hoverEnabled: true
+          cursorShape: Qt.PointingHandCursor
+          onClicked: root.pinConversation()
+        }
+      }
     }
 
     Rectangle {
+      id: permissionLayer
+      parent: root.pinned ? pinnedWindow.contentItem : panel.contentItem
       anchors.fill: parent
       visible: root.pendingPermissionId !== ""
       color: Qt.rgba(root.scrim.r, root.scrim.g, root.scrim.b, 0.72)
@@ -648,5 +683,35 @@ Item {
     }
 
     NumberAnimation { id: cardFade; target: card; property: "opacity"; from: 0; to: 1; duration: 150; easing.type: Easing.OutQuad }
+  }
+
+  FloatingWindow {
+    id: pinnedWindow
+    visible: root.opened && root.pinned
+    title: "Omarchy Ask"
+    color: root.background
+    implicitWidth: 760
+    implicitHeight: 800
+    minimumSize: Qt.size(480, 420)
+
+    onVisibleChanged: {
+      if (visible) {
+        Qt.callLater(function() { prompt.forceActiveFocus() })
+      } else if (root.opened && root.pinned) {
+        root.close()
+      }
+    }
+
+    Shortcut { sequence: "Escape"; onActivated: root.close() }
+    Shortcut {
+      sequence: "Y"
+      enabled: root.pendingPermissionId !== ""
+      onActivated: root.answerPermission(true)
+    }
+    Shortcut {
+      sequence: "N"
+      enabled: root.pendingPermissionId !== ""
+      onActivated: root.answerPermission(false)
+    }
   }
 }

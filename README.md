@@ -48,6 +48,7 @@ The bridge starts one ACP session when the overlay opens and reuses it for every
 - Mouse selection and `Ctrl+C`: copy conversation text
 - `Ctrl+V`: paste into the prompt
 - `Y` / `N`: allow or deny a pending tool request
+- Pin icon: move the live conversation into a normal resizable window
 
 The mode switch at the top of the overlay is persistent. **Permission** asks
 before tools run; **YOLO** automatically accepts tool requests. Permission is
