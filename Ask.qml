@@ -372,50 +372,6 @@ Item {
           width: surface.width
           spacing: Style.space(4)
 
-          Row {
-            width: stack.width
-            spacing: Style.space(8)
-
-            Text {
-              width: parent.width - modeButtons.width - parent.spacing
-              anchors.verticalCenter: parent.verticalCenter
-              text: root.permissionMode === "yolo"
-                ? "YOLO mode · tools run automatically"
-                : "Permission mode · ask before tools"
-              color: root.permissionMode === "yolo"
-                ? root.accent
-                : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.55)
-              font.family: Style.font.family
-              font.pixelSize: Style.font.caption
-              elide: Text.ElideRight
-            }
-
-            Row {
-              id: modeButtons
-              spacing: Style.space(4)
-
-              Button {
-                text: "Permission"
-                bordered: true
-                selected: root.permissionMode === "permission"
-                foreground: root.permissionMode === "permission" ? root.accent : root.foreground
-                fontFamily: Style.font.family
-                fontSize: Style.font.caption
-                onClicked: root.setPermissionMode("permission")
-              }
-
-              Button {
-                text: "YOLO"
-                bordered: true
-                selected: root.permissionMode === "yolo"
-                foreground: root.permissionMode === "yolo" ? root.accent : root.foreground
-                fontFamily: Style.font.family
-                fontSize: Style.font.caption
-                onClicked: root.setPermissionMode("yolo")
-              }
-            }
-          }
-
           Repeater {
             model: messages
             Item {
@@ -582,6 +538,35 @@ Item {
               }
             }
           }
+        }
+      }
+
+      Row {
+        id: modeToggle
+        anchors.top: parent.top
+        anchors.right: parent.right
+        anchors.topMargin: Style.space(8)
+        anchors.rightMargin: Style.space(10)
+        spacing: Style.space(5)
+        z: 10
+
+        Text {
+          anchors.verticalCenter: parent.verticalCenter
+          text: "YOLO"
+          color: root.permissionMode === "yolo"
+            ? root.accent
+            : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.42)
+          font.family: Style.font.family
+          font.pixelSize: Style.font.caption
+        }
+
+        ToggleSwitch {
+          checked: root.permissionMode === "yolo"
+          trackHeight: Style.space(18)
+          cursorPad: Style.space(2)
+          foreground: root.foreground
+          accent: root.accent
+          onToggled: root.setPermissionMode(checked ? "permission" : "yolo")
         }
       }
     }
