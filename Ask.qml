@@ -541,32 +541,25 @@ Item {
         }
       }
 
-      Row {
+      Text {
         id: modeToggle
         anchors.top: parent.top
         anchors.right: parent.right
         anchors.topMargin: Style.space(8)
         anchors.rightMargin: Style.space(10)
-        spacing: Style.space(5)
         z: 10
+        text: root.permissionMode === "yolo" ? "YOLO" : "Ask"
+        color: root.permissionMode === "yolo"
+          ? root.accent
+          : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.42)
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
 
-        Text {
-          anchors.verticalCenter: parent.verticalCenter
-          text: "YOLO"
-          color: root.permissionMode === "yolo"
-            ? root.accent
-            : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.42)
-          font.family: Style.font.family
-          font.pixelSize: Style.font.caption
-        }
-
-        ToggleSwitch {
-          checked: root.permissionMode === "yolo"
-          trackHeight: Style.space(18)
-          cursorPad: Style.space(2)
-          foreground: root.foreground
-          accent: root.accent
-          onToggled: root.setPermissionMode(checked ? "permission" : "yolo")
+        MouseArea {
+          anchors.fill: parent
+          anchors.margins: -Style.space(6)
+          cursorShape: Qt.PointingHandCursor
+          onClicked: root.setPermissionMode(root.permissionMode === "yolo" ? "permission" : "yolo")
         }
       }
     }
