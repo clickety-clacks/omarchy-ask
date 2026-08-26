@@ -5,6 +5,9 @@ Item {
 
   property var activeOverlay: null
   property var conversations: []
+  readonly property bool opened: activeOverlay !== null
+    && activeOverlay.opened
+    && !activeOverlay.pinned
 
   Component {
     id: conversationComponent
