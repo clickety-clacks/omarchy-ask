@@ -17,6 +17,8 @@ Item {
   property int activeReply: -1
   property string queuedPrompt: ""
   property string pendingPermissionId: ""
+  property string pendingPermissionTitle: ""
+  property var permissionQueue: []
 
   readonly property color background: Color.menu.background
   readonly property color foreground: Color.menu.text
@@ -60,7 +62,7 @@ Item {
     bridgeReady = false
     sessionLost = false
     queuedPrompt = ""
-    pendingPermissionId = ""
+    clearPermissions()
     statusText = ""
     activeReply = -1
     prompt.text = ""
@@ -139,6 +141,34 @@ Item {
     Qt.callLater(root.scrollToEnd)
   }
 
+  function clearPermissions() {
+    pendingPermissionId = ""
+    pendingPermissionTitle = ""
+    permissionQueue = []
+  }
+
+  function enqueuePermission(id, title) {
+    var request = { id: String(id || ""), title: String(title || "Allow tool?") }
+    if (pendingPermissionId === "") {
+      pendingPermissionId = request.id
+      pendingPermissionTitle = request.title
+    } else {
+      permissionQueue = permissionQueue.concat([request])
+    }
+  }
+
+  function showNextPermission() {
+    if (permissionQueue.length === 0) {
+      pendingPermissionId = ""
+      pendingPermissionTitle = ""
+      return
+    }
+    var request = permissionQueue[0]
+    permissionQueue = permissionQueue.slice(1)
+    pendingPermissionId = request.id
+    pendingPermissionTitle = request.title
+  }
+
   function handleAgentLine(rawLine) {
     var line = String(rawLine || "").trim()
     if (line === "") return
@@ -155,7 +185,7 @@ Item {
         waiting = false
         statusText = ""
         activeReply = -1
-        pendingPermissionId = ""
+        clearPermissions()
         Qt.callLater(function() { prompt.forceActiveFocus() })
       } else if (event.type === "status") {
         statusText = String(event.text || "Working…")
@@ -164,14 +194,15 @@ Item {
         var toolStatus = String(event.status || "in_progress")
         statusText = toolStatus === "completed" ? "Thinking…" : toolTitle
       } else if (event.type === "permission") {
-        pendingPermissionId = String(event.id || "")
-        statusText = String(event.title || "Allow tool?") + " · Y allow · N deny"
+        enqueuePermission(event.id, event.title)
       } else if (event.type === "error") {
+        clearPermissions()
         waiting = false
         activeReply = -1
         statusText = String(event.message || "Agent error")
         Qt.callLater(function() { prompt.forceActiveFocus() })
       } else if (event.type === "fatal") {
+        clearPermissions()
         bridgeReady = false
         sessionLost = true
         waiting = false
@@ -183,12 +214,13 @@ Item {
 
   function answerPermission(allow) {
     if (pendingPermissionId === "" || !agent.running) return
+    var answeredId = pendingPermissionId
     agent.write(JSON.stringify({
       type: "permission",
-      id: pendingPermissionId,
+      id: answeredId,
       allow: allow
     }) + "\n")
-    pendingPermissionId = ""
+    showNextPermission()
     statusText = allow ? "Working…" : "Tool denied"
   }
 
@@ -217,6 +249,7 @@ Item {
     ]
     stdinEnabled: true
     onExited: function(code) {
+      root.clearPermissions()
       root.bridgeReady = false
       if (!root.opened) return
       root.waiting = false
@@ -452,6 +485,89 @@ Item {
                   event.accepted = true
                 }
               }
+            }
+          }
+        }
+      }
+    }
+
+    Rectangle {
+      anchors.fill: parent
+      visible: root.pendingPermissionId !== ""
+      color: Qt.rgba(root.scrim.r, root.scrim.g, root.scrim.b, 0.72)
+      z: 20
+
+      MouseArea { anchors.fill: parent }
+
+      BorderSurface {
+        id: permissionCard
+        width: Math.min(Style.space(430), parent.width - Style.gapsOut * 2)
+        height: permissionContent.implicitHeight + Style.spacing.panelPadding * 2
+        anchors.centerIn: parent
+        color: root.background
+        radius: Style.cornerRadius
+        borderSpec: Border.surfaceSpec("menu", "border", root.accent, Math.max(1, Style.space(2)))
+
+        Column {
+          id: permissionContent
+          anchors.left: parent.left
+          anchors.right: parent.right
+          anchors.top: parent.top
+          anchors.margins: Style.spacing.panelPadding
+          spacing: Style.space(14)
+
+          Text {
+            width: parent.width
+            text: "Permission required"
+            color: root.accent
+            font.family: root.conversationFont
+            font.pixelSize: root.agentSize
+            font.italic: true
+          }
+
+          Text {
+            width: parent.width
+            text: root.pendingPermissionTitle
+            color: root.foreground
+            font.family: Style.font.family
+            font.pixelSize: Style.font.body
+            wrapMode: Text.Wrap
+            maximumLineCount: 5
+            elide: Text.ElideRight
+          }
+
+          Text {
+            width: parent.width
+            visible: root.permissionQueue.length > 0
+            text: root.permissionQueue.length + " more permission request" + (root.permissionQueue.length === 1 ? "" : "s") + " queued"
+            color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.5)
+            font.family: Style.font.family
+            font.pixelSize: Style.font.caption
+          }
+
+          Row {
+            width: parent.width
+            spacing: Style.space(12)
+
+            Button {
+              width: (parent.width - parent.spacing) / 2
+              text: "N  Deny"
+              bordered: true
+              foreground: root.foreground
+              fontFamily: Style.font.family
+              fontSize: Style.font.body
+              onClicked: root.answerPermission(false)
+            }
+
+            Button {
+              width: (parent.width - parent.spacing) / 2
+              text: "Y  Allow"
+              bordered: true
+              selected: true
+              foreground: root.accent
+              fontFamily: Style.font.family
+              fontSize: Style.font.body
+              onClicked: root.answerPermission(true)
             }
           }
         }
