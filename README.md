@@ -43,6 +43,23 @@ Then reload Hyprland:
 hyprctl reload
 ```
 
+## Remove
+
+Remove the plugin and delete the `Ask` binding you added to
+`~/.config/hypr/bindings.lua`:
+
+```sh
+omarchy plugin remove clickety-clacks.ask
+hyprctl reload
+```
+
+Ask leaves its small preferences file in place so reinstalling preserves your
+settings. Remove it too if you want to clear all Ask state:
+
+```sh
+rm ~/.config/omarchy/ask.json
+```
+
 ## Agent and working directory
 
 Claude is the default. Set `ASK_AGENT=codex` in the Omarchy Shell environment to use Codex ACP. Set `ASK_CWD` to choose the agent's working directory; otherwise Ask uses `$HOME`.
