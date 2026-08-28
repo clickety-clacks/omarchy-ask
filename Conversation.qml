@@ -24,14 +24,32 @@ Item {
   property var permissionQueue: []
   property string permissionMode: "permission"
 
+  // Font scale is owned by the manager so every conversation and both window
+  // modes share one value, and so a single writer persists it.
+  property real fontScale: 1
+  signal fontScaleStepRequested(real step)
+  signal fontScaleResetRequested()
+
+  // Anchoring pins a freshly submitted prompt to the top of the viewport and
+  // lets the reply fill the space beneath it. `tailSpace` is scratch room
+  // appended past the transcript so the newest prompt can actually reach the
+  // top; it shrinks as the reply grows, which holds the maximum scroll offset
+  // at `anchorY` and keeps the prompt still. Once the reply outgrows the
+  // viewport the room is gone and ordinary tail-following resumes.
+  property bool anchorActive: false
+  property real anchorY: 0
+  readonly property real tailSpace: anchorActive
+    ? Math.max(0, surface.height - Math.max(0, stack.height - anchorY))
+    : 0
+
   readonly property color background: Color.menu.background
   readonly property color foreground: Color.menu.text
   readonly property color border: Color.menu.border
   readonly property color accent: Color.accent
   readonly property color scrim: Color.menu.scrim
   readonly property string conversationFont: "Noto Serif"
-  readonly property int agentSize: Math.round(Style.font.body * 1.34)
-  readonly property int humanSize: Math.round(Style.font.body * 2.36)
+  readonly property int agentSize: Math.round(Style.font.body * 1.15 * root.fontScale)
+  readonly property int humanSize: Math.round(Style.font.body * 2.36 * root.fontScale)
 
   function humanSizeFor(text) {
     // Keep short prompts display-sized, but react quickly once they begin to
@@ -42,6 +60,40 @@ Item {
     var visualLength = value.length + newlines * 32
     var progress = Math.max(0, Math.min(1, (visualLength - 24) / 216))
     return Math.round(humanSize - (humanSize - agentSize) * progress)
+  }
+
+  // Qt renders consecutive Markdown paragraphs with no vertical gap at all,
+  // and folds a whitespace-only line away as blank. A paragraph holding one
+  // non-breaking space survives and reads as a single blank line, so those are
+  // inserted at paragraph breaks for display only; the stored message is not
+  // touched. Fenced code is copied verbatim, where such a line would become
+  // part of the code.
+  function spacedMarkdown(text) {
+    var value = String(text || "")
+    if (value.indexOf("\n") < 0) return value
+    var lines = value.split("\n")
+    var out = []
+    var fenced = false
+    var pendingBreak = false
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i]
+      var fence = /^\s{0,3}(```|~~~)/.test(line)
+      if (fence) fenced = !fenced
+      if (!fenced && !fence && line.trim() === "") {
+        if (out.length > 0) pendingBreak = true
+        continue
+      }
+      if (pendingBreak) {
+        pendingBreak = false
+        // A blank line before a list item marks a loose list. A paragraph
+        // inserted there would split the list in two and restart ordered
+        // numbering, so the original break is emitted unchanged instead.
+        if (/^\s*([-*+]|\d+[.)])\s/.test(line)) out.push("")
+        else out.push("", "\u00a0", "")
+      }
+      out.push(line)
+    }
+    return out.join("\n")
   }
 
   function open(payloadJson) {
@@ -71,6 +123,8 @@ Item {
     statusText = ""
     activeReply = -1
     activeReplyMessageId = ""
+    anchorActive = false
+    anchorY = 0
     prompt.text = ""
     messages.clear()
     closed()
@@ -85,6 +139,9 @@ Item {
   }
 
   function scrollToEnd() {
+    // An anchor glide owns the viewport until it lands. Streaming chunks that
+    // arrive mid-glide must not snap it to the end.
+    if (anchorScroll.running) return
     horizontalScroll.stop()
     verticalScroll.stop()
     // Let the border absorb ordinary growth. Only scroll once the surface has
@@ -104,17 +161,26 @@ Item {
   }
 
   function scrollBy(dx, dy) {
+    // Steps accumulate onto a running animation's destination. Measuring from
+    // the animated value instead would swallow most of a held key or a fast
+    // wheel spin, because every event would restart from a half-finished move.
     var maxX = Math.max(0, surface.contentWidth - surface.width)
     var maxY = Math.max(0, surface.contentHeight - surface.height)
-    var nextX = Math.max(0, Math.min(maxX, surface.contentX + dx))
-    var nextY = Math.max(0, Math.min(maxY, surface.contentY + dy))
-    if (nextX !== surface.contentX) {
+    var baseX = horizontalScroll.running ? horizontalScroll.to : surface.contentX
+    var baseY = anchorScroll.running
+      ? anchorScroll.to
+      : (verticalScroll.running ? verticalScroll.to : surface.contentY)
+    // Any deliberate scroll takes the viewport back from the glide.
+    anchorScroll.stop()
+    var nextX = Math.max(0, Math.min(maxX, baseX + dx))
+    var nextY = Math.max(0, Math.min(maxY, baseY + dy))
+    if (nextX !== baseX) {
       horizontalScroll.stop()
       horizontalScroll.from = surface.contentX
       horizontalScroll.to = nextX
       horizontalScroll.start()
     }
-    if (nextY !== surface.contentY) {
+    if (nextY !== baseY) {
       verticalScroll.stop()
       verticalScroll.from = surface.contentY
       verticalScroll.to = nextY
@@ -130,6 +196,51 @@ Item {
     scrollBy(0, direction * Math.max(Style.space(44), surface.height * 0.85))
   }
 
+  function stepFontScale(step) { fontScaleStepRequested(step) }
+  function resetFontScale() { fontScaleResetRequested() }
+
+  // Anchor the newest prompt to the top of the viewport. Called after the
+  // model append so the delegate exists and the column has placed it.
+  function anchorPrompt(index) {
+    // A transcript that still fits inside the card does not scroll at all, so
+    // the prompt is already visible and anchoring would only add dead space.
+    // Measure the laid-out column rather than `card.height`, which is still
+    // animating towards its cap at this point.
+    if (stack.height + card.frameInset < card.maxHeight - 1) return
+    var item = messageRepeater.itemAt(index)
+    if (!item) return
+    anchorY = item.y
+    anchorActive = true
+    Qt.callLater(function() {
+      horizontalScroll.stop()
+      verticalScroll.stop()
+      anchorScroll.stop()
+      var maxY = Math.max(0, surface.contentHeight - surface.height)
+      var target = Math.min(root.anchorY, maxY)
+      if (Math.abs(target - surface.contentY) < 1) {
+        surface.contentY = target
+        return
+      }
+      anchorScroll.from = surface.contentY
+      anchorScroll.to = target
+      anchorScroll.start()
+    })
+  }
+
+  // Ctrl +/-/0 resizes the conversation text. A focused TextEdit claims keys
+  // before a window shortcut sees them, so this runs from the same key
+  // handlers the scrolling set uses. Returns true when the key was consumed.
+  function handleFontKey(event) {
+    if ((event.modifiers & Qt.ControlModifier) === 0) return false
+    if (event.key === Qt.Key_Plus || event.key === Qt.Key_Equal) { stepFontScale(0.1); return true }
+    if (event.key === Qt.Key_Minus || event.key === Qt.Key_Underscore) { stepFontScale(-0.1); return true }
+    if (event.key === Qt.Key_0) { resetFontScale(); return true }
+    return false
+  }
+
+  // Ctrl+P pins the live conversation into a normal window. Like the font
+  // keys, it runs from the shared key handlers because a focused TextEdit
+  // claims the key before a window shortcut can see it.
   function handlePinKey(event) {
     if ((event.modifiers & Qt.ControlModifier) === 0) return false
     if (event.key !== Qt.Key_P) return false
@@ -137,17 +248,64 @@ Item {
     return true
   }
 
+  // Every text item in the card takes focus when it is clicked, and a focused
+  // TextEdit claims the navigation keys before a window shortcut can see them.
+  // The composer and the transcript therefore route keys through here, so the
+  // conversation scrolls wherever the caret happens to be. Returns true when
+  // the key was consumed.
+  function handleScrollKey(event) {
+    var ctrl = (event.modifiers & Qt.ControlModifier) !== 0
+    if (event.key === Qt.Key_Up || (ctrl && event.key === Qt.Key_K)) { scrollLine(0, -1); return true }
+    if (event.key === Qt.Key_Down || (ctrl && event.key === Qt.Key_J)) { scrollLine(0, 1); return true }
+    if (event.key === Qt.Key_Left || (ctrl && event.key === Qt.Key_H)) { scrollLine(-1, 0); return true }
+    if (event.key === Qt.Key_Right || (ctrl && event.key === Qt.Key_L)) { scrollLine(1, 0); return true }
+    if (event.key === Qt.Key_PageUp || (ctrl && event.key === Qt.Key_U)) { scrollPage(-1); return true }
+    if (event.key === Qt.Key_PageDown || (ctrl && event.key === Qt.Key_D)) { scrollPage(1); return true }
+    return false
+  }
+
+  // Shortcuts reach only the window that declares them, so the overlay panel
+  // and the pinned window each need their own copy of the scrolling and font
+  // set. These cover the case where nothing in the card holds focus at all.
+  component WindowShortcuts: Item {
+    // An inline component does not share the enclosing document's scope, so
+    // the conversation is handed in rather than reached through its id.
+    required property Item conversation
+    Shortcut { sequence: "Up"; onActivated: conversation.scrollLine(0, -1) }
+    Shortcut { sequence: "Down"; onActivated: conversation.scrollLine(0, 1) }
+    Shortcut { sequence: "Left"; onActivated: conversation.scrollLine(-1, 0) }
+    Shortcut { sequence: "Right"; onActivated: conversation.scrollLine(1, 0) }
+    Shortcut { sequence: "Ctrl+H"; onActivated: conversation.scrollLine(-1, 0) }
+    Shortcut { sequence: "Ctrl+J"; onActivated: conversation.scrollLine(0, 1) }
+    Shortcut { sequence: "Ctrl+K"; onActivated: conversation.scrollLine(0, -1) }
+    Shortcut { sequence: "Ctrl+L"; onActivated: conversation.scrollLine(1, 0) }
+    Shortcut { sequence: "Ctrl+U"; onActivated: conversation.scrollPage(-1) }
+    Shortcut { sequence: "Ctrl+D"; onActivated: conversation.scrollPage(1) }
+    Shortcut { sequence: "PageUp"; onActivated: conversation.scrollPage(-1) }
+    Shortcut { sequence: "PageDown"; onActivated: conversation.scrollPage(1) }
+    Shortcut { sequence: "Ctrl+="; onActivated: conversation.stepFontScale(0.1) }
+    Shortcut { sequence: "Ctrl++"; onActivated: conversation.stepFontScale(0.1) }
+    Shortcut { sequence: "Ctrl+-"; onActivated: conversation.stepFontScale(-0.1) }
+    Shortcut { sequence: "Ctrl+0"; onActivated: conversation.resetFontScale() }
+    Shortcut { sequence: "Ctrl+P"; onActivated: conversation.pinConversation() }
+  }
+
   function submit() {
     var text = prompt.text.trim()
     if (text === "" || waiting || sessionLost) return
+    // Someone who scrolled up to read history keeps their position; only a
+    // reader already at the tail gets pulled to the new prompt.
+    var followTail = isAtEnd()
     waiting = true
     statusText = "Thinking…"
     queuedPrompt = text
     prompt.text = ""
     messages.append({ role: "You", body: text })
+    var promptIndex = messages.count - 1
     activeReply = messages.count
     activeReplyMessageId = ""
     messages.append({ role: "Claude", body: "" })
+    if (followTail) Qt.callLater(function() { root.anchorPrompt(promptIndex) })
     if (bridgeReady) sendQueuedPrompt()
     else statusText = "Starting agent…"
   }
@@ -325,19 +483,7 @@ Item {
     exclusionMode: ExclusionMode.Ignore
 
     Shortcut { sequence: "Escape"; onActivated: root.close() }
-    Shortcut { sequence: "Up"; onActivated: root.scrollLine(0, -1) }
-    Shortcut { sequence: "Down"; onActivated: root.scrollLine(0, 1) }
-    Shortcut { sequence: "Left"; onActivated: root.scrollLine(-1, 0) }
-    Shortcut { sequence: "Right"; onActivated: root.scrollLine(1, 0) }
-    Shortcut { sequence: "Ctrl+H"; onActivated: root.scrollLine(-1, 0) }
-    Shortcut { sequence: "Ctrl+J"; onActivated: root.scrollLine(0, 1) }
-    Shortcut { sequence: "Ctrl+K"; onActivated: root.scrollLine(0, -1) }
-    Shortcut { sequence: "Ctrl+L"; onActivated: root.scrollLine(1, 0) }
-    Shortcut { sequence: "Ctrl+U"; onActivated: root.scrollPage(-1) }
-    Shortcut { sequence: "Ctrl+D"; onActivated: root.scrollPage(1) }
-    Shortcut { sequence: "PageUp"; onActivated: root.scrollPage(-1) }
-    Shortcut { sequence: "PageDown"; onActivated: root.scrollPage(1) }
-    Shortcut { sequence: "Ctrl+P"; onActivated: root.pinConversation() }
+    WindowShortcuts { conversation: root }
     Shortcut {
       sequence: "Y"
       enabled: root.pendingPermissionId !== ""
@@ -385,7 +531,7 @@ Item {
         anchors.margins: Style.spacing.panelPadding
         clip: true
         contentWidth: width
-        contentHeight: stack.height
+        contentHeight: stack.height + root.tailSpace
         interactive: contentHeight > height
         boundsBehavior: Flickable.StopAtBounds
 
@@ -403,6 +549,30 @@ Item {
           duration: 170
           easing.type: Easing.OutCubic
         }
+        // The anchor travels further than a scroll step, so it is given its
+        // own longer glide and is tracked separately from the stepping ones.
+        NumberAnimation {
+          id: anchorScroll
+          target: surface
+          property: "contentY"
+          duration: 320
+          easing.type: Easing.OutCubic
+        }
+
+        // Declared inside a Flickable, a handler attaches to the content item,
+        // which covers the viewport exactly when there is something to scroll.
+        // Mouse notches drive the same animated step the keys use; trackpads
+        // keep the Flickable's own pixel-precise handling.
+        WheelHandler {
+          target: null
+          acceptedDevices: PointerDevice.Mouse
+          onWheel: function(event) {
+            var steps = event.angleDelta.y / 120
+            var sideways = event.angleDelta.x / 120
+            if (steps === 0 && sideways === 0) return
+            root.scrollLine(-sideways * 3, -steps * 3)
+          }
+        }
 
         Column {
           id: stack
@@ -410,6 +580,7 @@ Item {
           spacing: Style.space(4)
 
           Repeater {
+            id: messageRepeater
             model: messages
             Item {
               id: turn
@@ -438,7 +609,7 @@ Item {
                 selectionColor: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.32)
                 selectedTextColor: root.foreground
                 Keys.onPressed: function(event) {
-                  if (root.handlePinKey(event)) event.accepted = true
+                  if (root.handleFontKey(event) || root.handlePinKey(event) || root.handleScrollKey(event)) event.accepted = true
                 }
               }
               TextEdit {
@@ -446,7 +617,7 @@ Item {
                 visible: !turn.human
                 width: parent.width
                 height: contentHeight
-                text: turn.body
+                text: root.spacedMarkdown(turn.body)
                 color: root.foreground
                 font.family: Style.font.family
                 font.pixelSize: root.agentSize
@@ -458,7 +629,7 @@ Item {
                 selectedTextColor: root.foreground
                 onLinkActivated: function(link) { Qt.openUrlExternally(link) }
                 Keys.onPressed: function(event) {
-                  if (root.handlePinKey(event)) event.accepted = true
+                  if (root.handleFontKey(event) || root.handlePinKey(event) || root.handleScrollKey(event)) event.accepted = true
                 }
               }
             }
@@ -539,46 +710,9 @@ Item {
               opacity: root.waiting ? 0.45 : 1
               onContentHeightChanged: if (activeFocus) Qt.callLater(root.scrollToEnd)
               Keys.onPressed: function(event) {
-                if (root.handlePinKey(event)) {
+                if (root.handleFontKey(event) || root.handlePinKey(event) || root.handleScrollKey(event)) {
                   event.accepted = true
-                } else if (event.key === Qt.Key_Up) {
-                  root.scrollLine(0, -1)
-                  event.accepted = true
-                } else if (event.key === Qt.Key_Down) {
-                  root.scrollLine(0, 1)
-                  event.accepted = true
-                } else if (event.key === Qt.Key_Left) {
-                  root.scrollLine(-1, 0)
-                  event.accepted = true
-                } else if (event.key === Qt.Key_Right) {
-                  root.scrollLine(1, 0)
-                  event.accepted = true
-                } else if (event.key === Qt.Key_PageUp) {
-                  root.scrollPage(-1)
-                  event.accepted = true
-                } else if (event.key === Qt.Key_PageDown) {
-                  root.scrollPage(1)
-                  event.accepted = true
-                } else if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_K) {
-                  root.scrollLine(0, -1)
-                  event.accepted = true
-                } else if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_J) {
-                  root.scrollLine(0, 1)
-                  event.accepted = true
-                } else if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_H) {
-                  root.scrollLine(-1, 0)
-                  event.accepted = true
-                } else if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_L) {
-                  root.scrollLine(1, 0)
-                  event.accepted = true
-                } else if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_U) {
-                  root.scrollPage(-1)
-                  event.accepted = true
-                } else if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_D) {
-                  root.scrollPage(1)
-                  event.accepted = true
-                } else
-                if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
+                } else if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
                     && !(event.modifiers & Qt.ShiftModifier)) {
                   root.submit()
                   event.accepted = true
@@ -751,7 +885,7 @@ Item {
     }
 
     Shortcut { sequence: "Escape"; onActivated: root.close() }
-    Shortcut { sequence: "Ctrl+P"; onActivated: root.pinConversation() }
+    WindowShortcuts { conversation: root }
     Shortcut {
       sequence: "Y"
       enabled: root.pendingPermissionId !== ""

@@ -36,7 +36,15 @@ async function loadSettings() {
 async function savePermissionMode(mode) {
   permissionMode = mode === "yolo" ? "yolo" : "permission";
   await mkdir(settingsDir, { recursive: true });
-  await writeFile(settingsPath, `${JSON.stringify({ permissionMode }, null, 2)}\n`, {
+  // The UI writes its own keys (font scale) to this file. Merge rather than
+  // replace so toggling the mode cannot drop them.
+  let settings = {};
+  try {
+    const parsed = JSON.parse(await readFile(settingsPath, "utf8"));
+    if (parsed && typeof parsed === "object") settings = parsed;
+  } catch {}
+  settings.permissionMode = permissionMode;
+  await writeFile(settingsPath, `${JSON.stringify(settings, null, 2)}\n`, {
     mode: 0o600,
   });
 }

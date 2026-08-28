@@ -10,8 +10,9 @@ discards it.
 The interface uses large serif typography for prompts, smaller sans-serif
 Markdown responses, selectable conversation text, streaming output, tool
 status, clickable links, and interactive ACP permission requests. Prompt type
-scales down as it gains visual lines. Streaming follows the tail while you are
-at the bottom and leaves the viewport alone after you scroll upward.
+scales down as it gains visual lines, and the whole conversation can be resized
+with `Ctrl` `+` / `-`. Streaming follows the tail while you are at the bottom
+and leaves the viewport alone after you scroll upward.
 
 ## Requirements
 
@@ -75,6 +76,8 @@ opening Ask again creates an independent conversation.
 - `Escape`: close and discard the session
 - `Arrow keys` or `Ctrl+H/J/K/L`: scroll the conversation
 - `PageUp/PageDown` or `Ctrl+U/D`: scroll by page
+- `Ctrl+=` / `Ctrl+-`: grow or shrink the conversation text
+- `Ctrl+0`: return the conversation text to its default size
 - Mouse selection and `Ctrl+C`: copy conversation text
 - `Ctrl+V`: paste into the prompt
 - `Y` / `N`: allow or deny a pending tool request
@@ -83,6 +86,9 @@ opening Ask again creates an independent conversation.
 
 Pinned conversations remain open with their own agent sessions. Invoking the
 Ask shortcut again opens a fresh overlay instead of dismissing pinned windows.
+
+Text size applies to every conversation, in the overlay and in pinned windows
+alike, and is remembered across restarts.
 
 The text control in the upper-right is persistent. **Ask** requests permission
 before tools run; **YOLO** automatically selects the ACP agent's one-time allow
@@ -98,6 +104,11 @@ does not offer one.
 
 - The `>` marker identifies the input line; it is not sent to the agent.
 - ACP `messageId` boundaries become separate assistant paragraphs.
+- Paragraph breaks inside an assistant reply are rendered with a blank line
+  between them. Fenced code and list structure are left as the agent wrote them.
+- Submitting glides the new prompt to the top of the viewport and lets the
+  reply fill the space beneath it. A prompt submitted while you are scrolled up
+  in the history never moves the viewport.
 - Assistant growth follows the bottom only if the viewport was already there.
 - Closing an overlay or pinned window ends only that conversation and its ACP
   process.
@@ -107,9 +118,10 @@ does not offer one.
 
 ## Local state
 
-Omarchy Ask keeps no transcript archive. Conversation text and ACP session
-state live only in their conversation process and disappear when its window is
-closed. The sole durable application state is the Ask/YOLO choice:
+Ask keeps no transcript archive. Conversation text and ACP session state live
+only in their conversation process and disappear when its window is closed. The
+durable application state is the Ask/YOLO choice and the conversation text
+size, both held in:
 
 ```text
 ~/.config/omarchy/ask.json

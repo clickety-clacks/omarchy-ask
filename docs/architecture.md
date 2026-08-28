@@ -74,13 +74,30 @@ the tail. It schedules `scrollToEnd()` only when that was true. This preserves
 automatic streaming for readers at the bottom without pulling someone away
 from text they deliberately scrolled up to read.
 
+Submitting applies the same tail test. A reader at the tail has the new prompt
+anchored to the top of the viewport; a reader who scrolled up keeps their
+position and is never moved. Anchoring works by adding `tailSpace` past the
+transcript so the newest prompt can reach the top, then shrinking that room as
+the reply grows. The maximum scroll offset therefore stays at `anchorY`, which
+holds the prompt still while the reply fills the space beneath it, and ordinary
+tail-following resumes once the reply outgrows the viewport. Anchoring is
+skipped when the transcript still fits inside the card, because nothing
+scrolls. Do not reset the anchor when a reply finishes: collapsing the room
+would jump the transcript.
+
 The input's `>` is visual chrome and is never included in the submitted text.
 
 ## Durable state and privacy
 
 Omarchy Ask intentionally stores no transcript. QML holds rendered messages in
-memory; closing the owning conversation clears them. The only app-owned durable
-state is the permission mode. Agent CLIs remain responsible for any data they
+memory; closing the owning conversation clears them. The app-owned durable
+state is the permission mode and the conversation font scale, both in
+`ask.json`. That file has two writers — `bridge.js` for the mode, `Ask.qml` for
+the scale — so each must merge into the existing contents rather than replace
+them.
+
+The font scale is owned by the `Ask.qml` manager, not by a conversation, so
+every overlay and pinned window shares one value and one writer persists it. Agent CLIs remain responsible for any data they
 store independently.
 
 Bridge stdout is reserved for machine-readable UI events. Agent stderr is
