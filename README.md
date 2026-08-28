@@ -61,7 +61,8 @@ opening Ask again creates an independent conversation.
 - Mouse selection and `Ctrl+C`: copy conversation text
 - `Ctrl+V`: paste into the prompt
 - `Y` / `N`: allow or deny a pending tool request
-- Pin icon: move the live conversation into a normal resizable window
+- `Ctrl+P` or the pin icon: move the live conversation into a normal resizable
+  window
 
 Pinned conversations remain open with their own agent sessions. Invoking the
 Ask shortcut again opens a fresh overlay instead of dismissing pinned windows.

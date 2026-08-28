@@ -130,6 +130,13 @@ Item {
     scrollBy(0, direction * Math.max(Style.space(44), surface.height * 0.85))
   }
 
+  function handlePinKey(event) {
+    if ((event.modifiers & Qt.ControlModifier) === 0) return false
+    if (event.key !== Qt.Key_P) return false
+    pinConversation()
+    return true
+  }
+
   function submit() {
     var text = prompt.text.trim()
     if (text === "" || waiting || sessionLost) return
@@ -330,6 +337,7 @@ Item {
     Shortcut { sequence: "Ctrl+D"; onActivated: root.scrollPage(1) }
     Shortcut { sequence: "PageUp"; onActivated: root.scrollPage(-1) }
     Shortcut { sequence: "PageDown"; onActivated: root.scrollPage(1) }
+    Shortcut { sequence: "Ctrl+P"; onActivated: root.pinConversation() }
     Shortcut {
       sequence: "Y"
       enabled: root.pendingPermissionId !== ""
@@ -429,6 +437,9 @@ Item {
                 selectByMouse: true
                 selectionColor: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.32)
                 selectedTextColor: root.foreground
+                Keys.onPressed: function(event) {
+                  if (root.handlePinKey(event)) event.accepted = true
+                }
               }
               TextEdit {
                 id: agentText
@@ -446,6 +457,9 @@ Item {
                 selectionColor: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.32)
                 selectedTextColor: root.foreground
                 onLinkActivated: function(link) { Qt.openUrlExternally(link) }
+                Keys.onPressed: function(event) {
+                  if (root.handlePinKey(event)) event.accepted = true
+                }
               }
             }
           }
@@ -525,7 +539,9 @@ Item {
               opacity: root.waiting ? 0.45 : 1
               onContentHeightChanged: if (activeFocus) Qt.callLater(root.scrollToEnd)
               Keys.onPressed: function(event) {
-                if (event.key === Qt.Key_Up) {
+                if (root.handlePinKey(event)) {
+                  event.accepted = true
+                } else if (event.key === Qt.Key_Up) {
                   root.scrollLine(0, -1)
                   event.accepted = true
                 } else if (event.key === Qt.Key_Down) {
@@ -735,6 +751,7 @@ Item {
     }
 
     Shortcut { sequence: "Escape"; onActivated: root.close() }
+    Shortcut { sequence: "Ctrl+P"; onActivated: root.pinConversation() }
     Shortcut {
       sequence: "Y"
       enabled: root.pendingPermissionId !== ""

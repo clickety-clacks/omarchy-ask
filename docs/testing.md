@@ -61,12 +61,14 @@ Confirm the configured shortcut opens a centered overlay with an input caret,
 1. Start a conversation and note its bridge PID.
 2. Click the pin icon. Confirm Hyprland maps a normal window titled
    `Omarchy Ask` and the bridge PID does not change.
-3. Continue the conversation in that window and confirm prior context remains.
-4. Invoke the global shortcut once. A fresh overlay must open immediately;
+3. Repeat with `Ctrl+P`, from a focused prompt and from a clicked transcript
+   selection, and confirm both pin the conversation the same way.
+4. Continue the conversation in that window and confirm prior context remains.
+5. Invoke the global shortcut once. A fresh overlay must open immediately;
    the pinned window must remain.
-5. Confirm there are now two bridge processes.
-6. Close the fresh overlay. The pinned window and its bridge must remain.
-7. Close the pinned window. Its final bridge process must exit.
+6. Confirm there are now two bridge processes.
+7. Close the fresh overlay. The pinned window and its bridge must remain.
+8. Close the pinned window. Its final bridge process must exit.
 
 Useful observations:
 
