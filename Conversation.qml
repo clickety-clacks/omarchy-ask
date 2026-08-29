@@ -242,6 +242,11 @@ Item {
   // only counts once the pointer has actually moved, and typing or arrowing
   // disarms it again.
   property bool menuMouseArmed: false
+  // Where the pointer last was, in window coordinates. Item-local coordinates
+  // are useless for this: they change when a row moves under a still pointer,
+  // which is exactly the case being guarded against.
+  property real menuMouseX: -1
+  property real menuMouseY: -1
   readonly property bool menuOpen: menuSearch.hasResults && !root.waiting
   readonly property bool menuSelected: root.menuOpen && root.menuIndex >= 0
 
@@ -936,14 +941,34 @@ Item {
                 MouseArea {
                   anchors.fill: parent
                   hoverEnabled: true
-                  // A move arms hovering and selects in the same gesture, so
-                  // the first twitch of the mouse still lands on this row.
-                  onPositionChanged: {
+
+                  // positionChanged fires for two different events: the
+                  // pointer moved, or the row moved beneath a pointer that
+                  // did not. Only the first is intent. In window coordinates
+                  // the second leaves the position unchanged, so comparing
+                  // there tells them apart -- comparing in item coordinates
+                  // cannot, which is why this armed on its own before.
+                  onPositionChanged: function(mouse) {
+                    var at = mapToItem(null, mouse.x, mouse.y)
+                    if (Math.abs(at.x - root.menuMouseX) < 0.5
+                        && Math.abs(at.y - root.menuMouseY) < 0.5) return
+                    root.menuMouseX = at.x
+                    root.menuMouseY = at.y
                     root.menuMouseArmed = true
                     root.menuIndex = index
                   }
-                  onEntered: if (root.menuMouseArmed) root.menuIndex = index
-                  // A click is deliberate, so it never waits to be armed.
+
+                  // A row arriving under the pointer records where it is so
+                  // the next move can be measured, but grants nothing: the
+                  // list is still keyboard territory until the mouse moves.
+                  onEntered: {
+                    if (root.menuMouseArmed) { root.menuIndex = index; return }
+                    var here = mapToItem(null, mouseX, mouseY)
+                    root.menuMouseX = here.x
+                    root.menuMouseY = here.y
+                  }
+
+                  // A click is already intent, so it never waits to be armed.
                   onClicked: { root.menuIndex = index; root.menuActivate() }
                 }
               }
