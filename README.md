@@ -2,7 +2,7 @@
 
 An AI-enabled launcher for Omarchy.
 
-![Omarchy Ask showing a conversation with an agent](assets/omarchy-ask.png)
+![Omarchy Ask: "george, tell me about the rabbits", with the agent replying in character](assets/omarchy-ask.png)
 
 - **One box, two jobs.** Type a question for Claude Code or Codex over ACP, or type a menu row and run it.
 - **Reads your real menu.** Same JSONC and `when:` conditions as `SUPER+SPACE` — new rows are searchable on save.
