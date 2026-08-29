@@ -11,7 +11,7 @@ An AI-enabled launcher for Omarchy.
 - **One box, two jobs.** Type a question for Claude Code or Codex over ACP, or type a menu row and run it.
 - **Your menu, live.** Ask reads the same definitions the `SUPER+SPACE` menu does, so anything you add there shows up here the moment you save it.
 - **Launches apps too.** Same entries, icons and ranking as the app launcher, in one flat list.
-- **Return means what you meant.** Empty selection submits the prompt; arrow onto a row and it runs.
+- **Return means what you meant.** Type and hit Return to ask; arrow onto a match first and Return runs it instead.
 - **Zero residue.** Conversations exist only while the overlay is open.
 - **Pin it.** `Ctrl+P` turns a live conversation into a normal window.
 - **Your size.** `Ctrl` `+` / `-` resizes everything, and remembers.
