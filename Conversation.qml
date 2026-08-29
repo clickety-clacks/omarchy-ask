@@ -230,6 +230,38 @@ Item {
   // Ctrl +/-/0 resizes the conversation text. A focused TextEdit claims keys
   // before a window shortcut sees them, so this runs from the same key
   // handlers the scrolling set uses. Returns true when the key was consumed.
+  // ------------------------------------------------- Omarchy menu in the box
+  // The composer doubles as the menu's search field. Nothing is selected
+  // until you arrow into the list, so Return in the composer always submits a
+  // prompt and can never fire a menu action you did not aim at -- which
+  // matters because those rows include package removal and power off.
+  property int menuIndex: -1
+  readonly property bool menuOpen: menuSearch.hasResults && !root.waiting
+  readonly property bool menuSelected: root.menuOpen && root.menuIndex >= 0
+
+  function menuMove(delta) {
+    if (!root.menuOpen) return false
+    var next = root.menuIndex + delta
+    if (next < -1) next = -1
+    if (next >= menuSearch.rows.length) next = menuSearch.rows.length - 1
+    root.menuIndex = next
+    return true
+  }
+
+  function menuActivate() {
+    if (!root.menuSelected) return false
+    if (!menuSearch.run(root.menuIndex)) return false
+    prompt.text = ""
+    root.menuIndex = -1
+    return true
+  }
+
+  MenuSearch {
+    id: menuSearch
+    query: root.waiting ? "" : prompt.text
+    onQueryChanged: root.menuIndex = -1
+  }
+
   function handleFontKey(event) {
     if ((event.modifiers & Qt.ControlModifier) === 0) return false
     if (event.key === Qt.Key_Plus || event.key === Qt.Key_Equal) { stepFontScale(0.1); return true }
@@ -710,11 +742,26 @@ Item {
               opacity: root.waiting ? 0.45 : 1
               onContentHeightChanged: if (activeFocus) Qt.callLater(root.scrollToEnd)
               Keys.onPressed: function(event) {
+                // Bare Down/Up walk the results while they are showing. The
+                // caret keeps them otherwise, and Ctrl+J/K still scroll the
+                // transcript, so nothing is taken away.
+                if (root.menuOpen && !(event.modifiers & Qt.ControlModifier)
+                    && (event.key === Qt.Key_Down || event.key === Qt.Key_Up)) {
+                  root.menuMove(event.key === Qt.Key_Down ? 1 : -1)
+                  event.accepted = true
+                  return
+                }
+                if (event.key === Qt.Key_Escape && root.menuSelected) {
+                  root.menuIndex = -1
+                  event.accepted = true
+                  return
+                }
                 if (root.handleFontKey(event) || root.handlePinKey(event) || root.handleScrollKey(event)) {
                   event.accepted = true
                 } else if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
                     && !(event.modifiers & Qt.ShiftModifier)) {
-                  root.submit()
+                  // A selection runs; no selection submits. Never inferred.
+                  if (!root.menuActivate()) root.submit()
                   event.accepted = true
                 }
               }
@@ -727,6 +774,63 @@ Item {
               color: root.accent
               font.family: Style.font.family
               font.pixelSize: prompt.responsiveFontSize
+            }
+          }
+
+          // Drops below the composer, Spotlight-style. Sized to its rows so
+          // it takes no space at all when nothing matches.
+          Column {
+            id: menuResults
+            width: stack.width
+            visible: root.menuOpen
+            spacing: 0
+
+            Rectangle {
+              width: parent.width
+              height: 1
+              color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.14)
+            }
+
+            Repeater {
+              model: root.menuOpen ? menuSearch.rows : []
+              delegate: Rectangle {
+                required property var modelData
+                required property int index
+                width: menuResults.width
+                height: rowLabel.implicitHeight + Style.space(14)
+                color: index === root.menuIndex
+                  ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.18)
+                  : "transparent"
+
+                Text {
+                  id: rowIcon
+                  x: Style.space(4)
+                  anchors.verticalCenter: parent.verticalCenter
+                  text: modelData.icon || ""
+                  color: index === root.menuIndex ? root.accent : root.foreground
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.body
+                }
+                Text {
+                  id: rowLabel
+                  x: Style.space(30)
+                  width: parent.width - x - Style.space(8)
+                  anchors.verticalCenter: parent.verticalCenter
+                  text: modelData.path
+                    ? modelData.label + "   " + modelData.path
+                    : modelData.label
+                  color: index === root.menuIndex ? root.accent : root.foreground
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.body
+                  elide: Text.ElideRight
+                }
+                MouseArea {
+                  anchors.fill: parent
+                  hoverEnabled: true
+                  onEntered: root.menuIndex = index
+                  onClicked: root.menuActivate()
+                }
+              }
             }
           }
         }
