@@ -1,18 +1,25 @@
 # Omarchy Ask
 
-A focused, ephemeral conversation overlay for [Omarchy](https://omarchy.org/)
-Quattro. Open it with a global shortcut, type a request, and talk to Claude
-Code or Codex through the Agent Client Protocol (ACP). Closing a conversation
-discards it.
+**One key. One box. Ask something, or go somewhere.**
+
+Hit the shortcut and start typing. If you are asking, you are talking to Claude
+Code or Codex. If you are going somewhere, your whole [Omarchy](https://omarchy.org/)
+menu is already in the box — apps, settings, themes, everything you have set up.
+
+You never pick a mode. You type, and press Return.
 
 ![Omarchy Ask showing a conversation with an agent](assets/omarchy-ask.png)
 
-The interface uses large serif typography for prompts, smaller sans-serif
-Markdown responses, selectable conversation text, streaming output, tool
-status, clickable links, and interactive ACP permission requests. Prompt type
-scales down as it gains visual lines, and the whole conversation can be resized
-with `Ctrl` `+` / `-`. Streaming follows the tail while you are at the bottom
-and leaves the viewport alone after you scroll upward.
+Ask is built for the thought you have not finished having yet. Start typing
+"screenshot" and the menu row is there before you have decided whether you
+wanted the shortcut or wanted to ask how it works. Nothing is selected until
+you reach for it, so Return still sends your words to an agent unless you
+deliberately picked a row — you are never one keystroke from running something
+you meant to ask about.
+
+When you are done, it is gone. Conversations are not saved, not listed, not
+waiting for you later. That is the point: it costs nothing to open, so you open
+it constantly.
 
 ## Requirements
 
@@ -117,15 +124,19 @@ does not offer one.
   dismissed by that shortcut.
 - Markdown links open through the desktop's external URL handler.
 
-## Menu search
+## Your menu is already in it
 
 ![Typing "app" in the Ask prompt, with menu rows and installed applications listed beneath it](assets/omarchy-ask-menu-search.png)
 
-Typing in the prompt also searches the Omarchy menu — the same rows, apps and
-`when:` conditions the `SUPER+SPACE` menu uses, read from its own definitions
-rather than duplicated here. Matches drop below the prompt; nothing is
-selected until you move to it, so `Return` always submits a prompt unless you
-have deliberately picked a row.
+Ask keeps no list of its own. It reads the very same menu `SUPER+SPACE` reads,
+so everything you have already set up is searchable the moment you save it — a
+machine you SSH into, a webapp you added, a submenu you invented. Nothing to
+register. Nothing to keep in sync. Install a plugin that adds a menu row and it
+is in Ask too, without either of them knowing about the other.
+
+Applications come from the same place the launcher gets them, icons and all.
+Menu rows, submenus and apps compete in one flat list, so you never drill —
+type what you want and it rises to the top.
 
 - `Down`/`Up` or `Tab`/`Shift+Tab`: move through matches
 - `Return`: run the selected row, or submit a prompt when nothing is selected
