@@ -830,9 +830,9 @@ Item {
             // Each row carries half of Style.space(16) above its text and half
             // below, so neighbours sit a full space(16) apart. The first row
             // only had its own half against the rule, which read as crowded.
-            // The other half is added here so the gap above the first item
-            // matches the gap between items.
-            Item { width: 1; height: Style.space(8) }
+            // The other half is added here, plus a few px: matching the
+            // inter-row gap exactly still read tight under a hard rule.
+            Item { width: 1; height: Style.space(11) }
 
             Repeater {
               model: root.menuOpen ? menuSearch.rows : []
