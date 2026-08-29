@@ -6,6 +6,8 @@ An AI-enabled launcher for Omarchy.
 
 ![Omarchy Ask: "george, tell me about the rabbits", with the agent replying in character](assets/omarchy-ask.png)
 
+![Typing "app" in the Ask prompt, with menu rows and installed applications listed beneath it](assets/omarchy-ask-menu-search.png)
+
 - **One box, two jobs.** Type a question for Claude Code or Codex over ACP, or type a menu row and run it.
 - **Reads your real menu.** Same JSONC and `when:` conditions as `SUPER+SPACE` — new rows are searchable on save.
 - **Apps included.** Same library, icons and ranking as the launcher, in one flat list.
@@ -118,8 +120,6 @@ does not offer one.
 - Markdown links open through the desktop's external URL handler.
 
 ## Your menu is already in it
-
-![Typing "app" in the Ask prompt, with menu rows and installed applications listed beneath it](assets/omarchy-ask-menu-search.png)
 
 Ask keeps no list of its own — it reads the menu's own definitions, including
 the `when:` conditions that decide what applies right now. Install a plugin
