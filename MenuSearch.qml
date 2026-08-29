@@ -41,7 +41,7 @@ Item {
   // and the card animates its height. Recomputing per keystroke therefore
   // made fast typing look like the window was flinching. Wait for a pause in
   // typing and resize once, on what was actually typed.
-  property int debounceMs: 320
+  property int debounceMs: 270
   readonly property bool hasResults: rows.length > 0
   property var rows: []
 

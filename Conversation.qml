@@ -270,6 +270,7 @@ Item {
 
   // Assigned by Ask.qml, which the shell assigns in turn.
   property var shell: null
+  property int searchDebounceMs: 270
   readonly property var appLibrary: root.shell ? root.shell.appLibrary : null
 
   // Result text tracks the same scale as the prompt, so Ctrl +/- moves the
@@ -281,6 +282,7 @@ Item {
     id: menuSearch
     query: root.waiting ? "" : prompt.text
     appLibrary: root.appLibrary
+    debounceMs: root.searchDebounceMs
     onQueryChanged: { root.menuIndex = -1; root.menuMouseArmed = false }
   }
 
