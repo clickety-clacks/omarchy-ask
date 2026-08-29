@@ -1,25 +1,28 @@
 # Omarchy Ask
 
-**One key. One box. Ask something, or go somewhere.**
-
-Hit the shortcut and start typing. If you are asking, you are talking to Claude
-Code or Codex. If you are going somewhere, your whole [Omarchy](https://omarchy.org/)
-menu is already in the box — apps, settings, themes, everything you have set up.
-
-You never pick a mode. You type, and press Return.
+An AI-enabled launcher for Omarchy.
 
 ![Omarchy Ask showing a conversation with an agent](assets/omarchy-ask.png)
 
-Ask is built for the thought you have not finished having yet. Start typing
-"screenshot" and the menu row is there before you have decided whether you
-wanted the shortcut or wanted to ask how it works. Nothing is selected until
-you reach for it, so Return still sends your words to an agent unless you
-deliberately picked a row — you are never one keystroke from running something
-you meant to ask about.
-
-When you are done, it is gone. Conversations are not saved, not listed, not
-waiting for you later. That is the point: it costs nothing to open, so you open
-it constantly.
+- **Ask or go, without choosing which.** One box. Type a question and you are
+  talking to Claude Code or Codex; type a menu row and it is right there. You
+  never pick a mode first.
+- **Everything you already set up is in it.** Ask reads the same menu
+  `SUPER+SPACE` reads, so a machine you SSH into, a webapp you added or a
+  submenu you invented is searchable the moment you save it. Nothing to
+  register, nothing to keep in sync.
+- **Your apps too, icons and all**, from the same library the launcher uses.
+  Rows, submenus and apps compete in one flat list, so you never drill.
+- **It cannot run something you meant to ask about.** Nothing is selected
+  until you reach for it, so Return sends your words to an agent unless you
+  deliberately picked a row.
+- **Nothing to clean up afterwards.** Conversations are not saved, listed, or
+  waiting for you later — which is exactly why it costs nothing to open, and
+  why you end up opening it constantly.
+- **Keep one when it turns into real work.** `Ctrl+P` pins a live conversation
+  into an ordinary resizable window and the agent keeps going.
+- **Readable at your size.** `Ctrl` `+` / `-` resizes the whole thing, and it
+  remembers.
 
 ## Requirements
 
@@ -128,15 +131,10 @@ does not offer one.
 
 ![Typing "app" in the Ask prompt, with menu rows and installed applications listed beneath it](assets/omarchy-ask-menu-search.png)
 
-Ask keeps no list of its own. It reads the very same menu `SUPER+SPACE` reads,
-so everything you have already set up is searchable the moment you save it — a
-machine you SSH into, a webapp you added, a submenu you invented. Nothing to
-register. Nothing to keep in sync. Install a plugin that adds a menu row and it
-is in Ask too, without either of them knowing about the other.
-
-Applications come from the same place the launcher gets them, icons and all.
-Menu rows, submenus and apps compete in one flat list, so you never drill —
-type what you want and it rises to the top.
+Ask keeps no list of its own — it reads the menu's own definitions, including
+the `when:` conditions that decide what applies right now. Install a plugin
+that adds a menu row and the row is in Ask too, without either of them knowing
+about the other.
 
 - `Down`/`Up` or `Tab`/`Shift+Tab`: move through matches
 - `Return`: run the selected row, or submit a prompt when nothing is selected
