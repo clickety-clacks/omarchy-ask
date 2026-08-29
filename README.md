@@ -9,7 +9,7 @@ An AI-enabled launcher for Omarchy.
 ![Typing "app" in the Ask prompt, with menu rows and installed applications listed beneath it](assets/omarchy-ask-menu-search.png)
 
 - **One box, two jobs.** Type a question for Claude Code or Codex over ACP, or type a menu row and run it.
-- **Reads your real menu.** Same JSONC and `when:` conditions as `SUPER+SPACE` — new rows are searchable on save.
+- **Your menu, live.** Ask reads the same definitions the `SUPER+SPACE` menu does, so anything you add there shows up here the moment you save it.
 - **Launches apps too.** Same entries, icons and ranking as the app launcher, in one flat list.
 - **Return means what you meant.** Empty selection submits the prompt; arrow onto a row and it runs.
 - **Zero residue.** Conversations exist only while the overlay is open.
