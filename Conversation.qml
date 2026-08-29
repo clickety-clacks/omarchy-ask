@@ -262,7 +262,7 @@ Item {
 
   // Result text tracks the same scale as the prompt, so Ctrl +/- moves the
   // whole box together rather than leaving the matches behind.
-  readonly property int menuTitleSize: Math.round(Style.font.body * 2 * root.fontScale)
+  readonly property int menuTitleSize: Math.round(Style.font.body * (4 / 3) * root.fontScale)
   readonly property int menuPathSize: Math.round(Style.font.caption * root.fontScale)
 
   MenuSearch {
@@ -819,7 +819,7 @@ Item {
                 Item {
                   id: rowIcon
                   x: Style.space(6)
-                  anchors.verticalCenter: parent.verticalCenter
+                  y: rowText.y + Math.round((rowTitle.implicitHeight - height) / 2)
                   width: root.menuTitleSize
                   height: width
 
@@ -854,6 +854,7 @@ Item {
                   spacing: Style.space(1)
 
                   Text {
+                    id: rowTitle
                     width: parent.width
                     text: modelData.label
                     color: parent.parent.current ? root.accent : root.foreground
