@@ -4,27 +4,13 @@ An AI-enabled launcher for Omarchy.
 
 ![Omarchy Ask showing a conversation with an agent](assets/omarchy-ask.png)
 
-- **Ask or go from one box.** Type a question and you are talking to Claude
-  Code or Codex over ACP; type a menu row and it is right there. The box is a
-  prompt and a launcher at once, and Return does whichever you meant.
-- **Your menu, straight from the source.** Ask evaluates the same JSONC the
-  `SUPER+SPACE` menu does — your extensions, plugin-contributed rows, and the
-  `when:` conditions that decide what applies right now. Add a row anywhere
-  and it is searchable on save. There is no second registry to keep in sync.
-- **Apps from the shell's own library.** Same entries, same icons, same
-  ranking as the launcher. Rows, submenus and applications compete in one flat
-  list, so a partial name is enough.
-- **Return always does the deliberate thing.** Selection starts empty, so
-  Return submits your prompt; arrow or Tab onto a row and Return runs it. The
-  mouse only claims a row once it actually moves, so a list appearing under a
-  resting cursor leaves the keyboard in charge.
-- **Zero residue.** Conversations live for as long as the overlay is open and
-  no longer — nothing written, nothing listed. Opening it is free, so you open
-  it constantly.
-- **Pin when it grows up.** `Ctrl+P` moves a live conversation into a normal
-  toplevel window; the agent session carries straight on.
-- **Scales with you.** `Ctrl` `+` / `-` resizes everything at once and the
-  choice persists.
+- **One box, two jobs.** Type a question for Claude Code or Codex over ACP, or type a menu row and run it.
+- **Reads your real menu.** Same JSONC and `when:` conditions as `SUPER+SPACE` — new rows are searchable on save.
+- **Apps included.** Same library, icons and ranking as the launcher, in one flat list.
+- **Return means what you meant.** Empty selection submits the prompt; arrow onto a row and it runs.
+- **Zero residue.** Conversations exist only while the overlay is open.
+- **Pin it.** `Ctrl+P` turns a live conversation into a normal window.
+- **Your size.** `Ctrl` `+` / `-` resizes everything, and remembers.
 
 ## Requirements
 
