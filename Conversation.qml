@@ -792,7 +792,10 @@ Item {
             Text {
               id: promptMarker
               anchors.verticalCenter: prompt.verticalCenter
-              text: ">"
+              // A small filled square rather than a chevron: it reads as a
+              // marker instead of a shell prompt, which matters now that the
+              // box is a search field as much as it is a composer.
+              text: "\u25AA"
               color: root.accent
               font.family: Style.font.family
               font.pixelSize: prompt.responsiveFontSize
@@ -806,6 +809,17 @@ Item {
             width: stack.width
             visible: root.menuOpen
             spacing: 0
+
+            // The composer centres the prompt, so the space below the text is
+            // already equal to the space above it -- but a hard rule reads
+            // tighter than text does, and the line sat close. Drop it by the
+            // composer's own top padding again, which keeps it proportional
+            // as the type scales instead of pinning it to a constant.
+            Item {
+              width: 1
+              height: Math.max(Style.space(6),
+                               Math.round((composer.height - prompt.height) / 2))
+            }
 
             Rectangle {
               width: parent.width
