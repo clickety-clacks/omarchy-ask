@@ -566,7 +566,14 @@ Item {
       width: root.pinned ? parent.width : Math.min(Style.space(540), parent.width - Style.gapsOut * 2)
       height: root.pinned ? parent.height : Math.min(maxHeight, stack.height + frameInset)
       anchors.horizontalCenter: parent.horizontalCenter
-      y: root.pinned ? 0 : Math.max(Style.gapsOut, Math.round((parent.height - height) / 2))
+      // Optical centre, not the mathematical one. A card placed at exactly
+      // half the free space reads as sitting low, because the eye weights the
+      // gap beneath it more heavily than the gap above. Giving the top gap
+      // the smaller share lifts it to where it looks centred.
+      readonly property real opticalCentre: 0.38
+      y: root.pinned
+        ? 0
+        : Math.max(Style.gapsOut, Math.round((parent.height - height) * opticalCentre))
       color: root.background
       visible: root.layoutReady
       radius: root.pinned ? 0 : Style.cornerRadius
