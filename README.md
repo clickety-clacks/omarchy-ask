@@ -2,6 +2,8 @@
 
 An AI-enabled launcher for Omarchy.
 
+![Omarchy Ask with "who watches the watchers" typed and the agent thinking](assets/omarchy-ask-prompt.png)
+
 ![Omarchy Ask: "george, tell me about the rabbits", with the agent replying in character](assets/omarchy-ask.png)
 
 - **One box, two jobs.** Type a question for Claude Code or Codex over ACP, or type a menu row and run it.
