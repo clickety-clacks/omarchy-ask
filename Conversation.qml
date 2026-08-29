@@ -236,11 +236,18 @@ Item {
   // prompt and can never fire a menu action you did not aim at -- which
   // matters because those rows include package removal and power off.
   property int menuIndex: -1
+  // The list opens under wherever the pointer happens to be resting, so a
+  // bare `entered` would hand it the selection the instant it appears --
+  // stealing it from the keyboard without anyone touching the mouse. Hover
+  // only counts once the pointer has actually moved, and typing or arrowing
+  // disarms it again.
+  property bool menuMouseArmed: false
   readonly property bool menuOpen: menuSearch.hasResults && !root.waiting
   readonly property bool menuSelected: root.menuOpen && root.menuIndex >= 0
 
   function menuMove(delta) {
     if (!root.menuOpen) return false
+    root.menuMouseArmed = false
     var next = root.menuIndex + delta
     if (next < -1) next = -1
     if (next >= menuSearch.rows.length) next = menuSearch.rows.length - 1
@@ -269,7 +276,7 @@ Item {
     id: menuSearch
     query: root.waiting ? "" : prompt.text
     appLibrary: root.appLibrary
-    onQueryChanged: root.menuIndex = -1
+    onQueryChanged: { root.menuIndex = -1; root.menuMouseArmed = false }
   }
 
   function handleFontKey(event) {
@@ -819,7 +826,13 @@ Item {
                 Item {
                   id: rowIcon
                   x: Style.space(6)
-                  y: rowText.y + Math.round((rowTitle.implicitHeight - height) / 2)
+                  // Optically centred, not mathematically. A line box carries
+                  // descender space the title glyphs mostly do not use, so
+                  // splitting it evenly parks the icon visibly low against the
+                  // text it labels. Lift it by a fraction of the type size.
+                  y: rowText.y
+                     + Math.round((rowTitle.implicitHeight - height) / 2)
+                     - Math.round(root.menuTitleSize * 0.09)
                   width: root.menuTitleSize
                   height: width
 
@@ -876,8 +889,15 @@ Item {
                 MouseArea {
                   anchors.fill: parent
                   hoverEnabled: true
-                  onEntered: root.menuIndex = index
-                  onClicked: root.menuActivate()
+                  // A move arms hovering and selects in the same gesture, so
+                  // the first twitch of the mouse still lands on this row.
+                  onPositionChanged: {
+                    root.menuMouseArmed = true
+                    root.menuIndex = index
+                  }
+                  onEntered: if (root.menuMouseArmed) root.menuIndex = index
+                  // A click is deliberate, so it never waits to be armed.
+                  onClicked: { root.menuIndex = index; root.menuActivate() }
                 }
               }
             }
