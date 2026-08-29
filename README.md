@@ -119,6 +119,8 @@ does not offer one.
 
 ## Menu search
 
+![Typing "app" in the Ask prompt, with menu rows and installed applications listed beneath it](assets/omarchy-ask-menu-search.png)
+
 Typing in the prompt also searches the Omarchy menu — the same rows, apps and
 `when:` conditions the `SUPER+SPACE` menu uses, read from its own definitions
 rather than duplicated here. Matches drop below the prompt; nothing is
