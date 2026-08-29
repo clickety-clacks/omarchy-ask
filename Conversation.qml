@@ -656,9 +656,22 @@ Item {
               required property string body
               readonly property bool human: role === "You"
               width: stack.width
+              // A prompt sits above its reply by the same gap the reply puts
+              // between its own paragraphs: one blank line at the agent size.
+              // That line is measured, not guessed, so it tracks the font
+              // scale. The stack's own spacing is subtracted so it is not
+              // counted twice.
               height: human
-                ? humanText.contentHeight
+                ? humanText.contentHeight + Math.max(0, agentLineMetric.contentHeight - stack.spacing)
                 : (body === "" ? 0 : agentText.contentHeight + Style.space(18))
+
+              Text {
+                id: agentLineMetric
+                visible: false
+                text: " "
+                font.family: Style.font.family
+                font.pixelSize: root.agentSize
+              }
 
               TextEdit {
                 id: humanText
