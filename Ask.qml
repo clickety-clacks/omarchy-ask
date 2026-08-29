@@ -5,6 +5,10 @@ import Quickshell.Io
 Item {
   id: root
 
+  // The shell assigns this if the property exists (shell.qml: `"shell" in item`).
+  // It is the only route to the shared AppLibrary, which is what makes
+  // applications searchable from the composer alongside menu rows.
+  property var shell: null
   property var activeOverlay: null
   property var conversations: []
   readonly property bool opened: activeOverlay !== null
@@ -17,6 +21,13 @@ Item {
   readonly property real maxFontScale: 2
   readonly property string settingsPath: Quickshell.env("HOME") + "/.config/omarchy/ask.json"
   property real fontScale: 1
+  // How long typing has to pause before the menu search recomputes. Matching
+  // is cheap; the resize it triggers is not, so this is really a tolerance
+  // for how much the card is allowed to move while you type. Settable in
+  // ask.json, which is watched, so an edit applies without a restart.
+  readonly property int minSearchDebounceMs: 0
+  readonly property int maxSearchDebounceMs: 2000
+  property int searchDebounceMs: 270
   property bool settingsLoaded: false
   // Retained so writing the font scale cannot drop the mode the bridge owns.
   property string persistedPermissionMode: "permission"
@@ -39,6 +50,10 @@ Item {
     fontScale = (isFinite(scale) && scale > 0)
       ? Math.max(minFontScale, Math.min(maxFontScale, scale))
       : 1
+    var debounce = Number(data.searchDebounceMs)
+    searchDebounceMs = isFinite(debounce)
+      ? Math.round(Math.max(minSearchDebounceMs, Math.min(maxSearchDebounceMs, debounce)))
+      : 270
     settingsLoaded = true
   }
 
@@ -46,7 +61,8 @@ Item {
     if (!settingsLoaded) return
     settingsFile.setText(JSON.stringify({
       permissionMode: persistedPermissionMode,
-      fontScale: fontScale
+      fontScale: fontScale,
+      searchDebounceMs: searchDebounceMs
     }, null, 2) + "\n")
   }
 
@@ -91,6 +107,8 @@ Item {
     conversations = conversations.concat([conversation])
     activeOverlay = conversation
     conversation.fontScale = Qt.binding(function() { return root.fontScale })
+    conversation.shell = Qt.binding(function() { return root.shell })
+    conversation.searchDebounceMs = Qt.binding(function() { return root.searchDebounceMs })
     conversation.fontScaleStepRequested.connect(function(step) { root.adjustFontScale(step) })
     conversation.fontScaleResetRequested.connect(function() { root.setFontScale(1) })
     conversation.closed.connect(function() { root.removeConversation(conversation) })

@@ -230,6 +230,67 @@ Item {
   // Ctrl +/-/0 resizes the conversation text. A focused TextEdit claims keys
   // before a window shortcut sees them, so this runs from the same key
   // handlers the scrolling set uses. Returns true when the key was consumed.
+  // ------------------------------------------------- Omarchy menu in the box
+  // The composer doubles as the menu's search field. Nothing is selected
+  // until you arrow into the list, so Return in the composer always submits a
+  // prompt and can never fire a menu action you did not aim at -- which
+  // matters because those rows include package removal and power off.
+  property int menuIndex: -1
+  // The list opens under wherever the pointer happens to be resting, so a
+  // bare `entered` would hand it the selection the instant it appears --
+  // stealing it from the keyboard without anyone touching the mouse. Hover
+  // only counts once the pointer has actually moved, and typing or arrowing
+  // disarms it again.
+  property bool menuMouseArmed: false
+  // Where the pointer last was, in window coordinates. Item-local coordinates
+  // are useless for this: they change when a row moves under a still pointer,
+  // which is exactly the case being guarded against.
+  property real menuMouseX: -1
+  property real menuMouseY: -1
+  readonly property bool menuOpen: menuSearch.hasResults && !root.waiting
+  readonly property bool menuSelected: root.menuOpen && root.menuIndex >= 0
+
+  function menuMove(delta) {
+    if (!root.menuOpen) return false
+    root.menuMouseArmed = false
+    var next = root.menuIndex + delta
+    if (next < -1) next = -1
+    if (next >= menuSearch.rows.length) next = menuSearch.rows.length - 1
+    root.menuIndex = next
+    return true
+  }
+
+  function menuActivate() {
+    if (!root.menuSelected) return false
+    if (!menuSearch.run(root.menuIndex)) return false
+    prompt.text = ""
+    root.menuIndex = -1
+    // Running a row is the whole errand: the overlay is ephemeral and has
+    // nothing left to show, so it gets out of the way of whatever just
+    // launched. A pinned conversation is a window someone kept on purpose,
+    // so it stays and only clears the box.
+    if (!root.pinned) root.close()
+    return true
+  }
+
+  // Assigned by Ask.qml, which the shell assigns in turn.
+  property var shell: null
+  property int searchDebounceMs: 270
+  readonly property var appLibrary: root.shell ? root.shell.appLibrary : null
+
+  // Result text tracks the same scale as the prompt, so Ctrl +/- moves the
+  // whole box together rather than leaving the matches behind.
+  readonly property int menuTitleSize: Math.round(Style.font.body * (4 / 3) * root.fontScale)
+  readonly property int menuPathSize: Math.round(Style.font.caption * root.fontScale)
+
+  MenuSearch {
+    id: menuSearch
+    query: root.waiting ? "" : prompt.text
+    appLibrary: root.appLibrary
+    debounceMs: root.searchDebounceMs
+    onQueryChanged: { root.menuIndex = -1; root.menuMouseArmed = false }
+  }
+
   function handleFontKey(event) {
     if ((event.modifiers & Qt.ControlModifier) === 0) return false
     if (event.key === Qt.Key_Plus || event.key === Qt.Key_Equal) { stepFontScale(0.1); return true }
@@ -512,7 +573,14 @@ Item {
       width: root.pinned ? parent.width : Math.min(Style.space(540), parent.width - Style.gapsOut * 2)
       height: root.pinned ? parent.height : Math.min(maxHeight, stack.height + frameInset)
       anchors.horizontalCenter: parent.horizontalCenter
-      y: root.pinned ? 0 : Math.max(Style.gapsOut, Math.round((parent.height - height) / 2))
+      // Optical centre, not the mathematical one. A card placed at exactly
+      // half the free space reads as sitting low, because the eye weights the
+      // gap beneath it more heavily than the gap above. Giving the top gap
+      // the smaller share lifts it to where it looks centred.
+      readonly property real opticalCentre: 0.38
+      y: root.pinned
+        ? 0
+        : Math.max(Style.gapsOut, Math.round((parent.height - height) * opticalCentre))
       color: root.background
       visible: root.layoutReady
       radius: root.pinned ? 0 : Style.cornerRadius
@@ -710,11 +778,38 @@ Item {
               opacity: root.waiting ? 0.45 : 1
               onContentHeightChanged: if (activeFocus) Qt.callLater(root.scrollToEnd)
               Keys.onPressed: function(event) {
+                // Bare Down/Up walk the results while they are showing. The
+                // caret keeps them otherwise, and Ctrl+J/K still scroll the
+                // transcript, so nothing is taken away.
+                if (root.menuOpen && !(event.modifiers & Qt.ControlModifier)
+                    && (event.key === Qt.Key_Down || event.key === Qt.Key_Up)) {
+                  root.menuMove(event.key === Qt.Key_Down ? 1 : -1)
+                  event.accepted = true
+                  return
+                }
+                // Tab walks the results too, but only while they are showing;
+                // otherwise Tab keeps whatever it already did in the box.
+                // Shift+Tab arrives as Backtab, so matching Key_Tab alone
+                // would catch the forward direction and silently miss the
+                // reverse.
+                if (root.menuOpen
+                    && (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab)) {
+                  root.menuMove(event.key === Qt.Key_Backtab
+                    || (event.modifiers & Qt.ShiftModifier) ? -1 : 1)
+                  event.accepted = true
+                  return
+                }
+                if (event.key === Qt.Key_Escape && root.menuSelected) {
+                  root.menuIndex = -1
+                  event.accepted = true
+                  return
+                }
                 if (root.handleFontKey(event) || root.handlePinKey(event) || root.handleScrollKey(event)) {
                   event.accepted = true
                 } else if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
                     && !(event.modifiers & Qt.ShiftModifier)) {
-                  root.submit()
+                  // A selection runs; no selection submits. Never inferred.
+                  if (!root.menuActivate()) root.submit()
                   event.accepted = true
                 }
               }
@@ -723,10 +818,160 @@ Item {
             Text {
               id: promptMarker
               anchors.verticalCenter: prompt.verticalCenter
-              text: ">"
+              // A small filled square rather than a chevron: it reads as a
+              // marker instead of a shell prompt, which matters now that the
+              // box is a search field as much as it is a composer.
+              text: "\u25AA"
               color: root.accent
               font.family: Style.font.family
               font.pixelSize: prompt.responsiveFontSize
+            }
+          }
+
+          // Drops below the composer, Spotlight-style. Sized to its rows so
+          // it takes no space at all when nothing matches.
+          Column {
+            id: menuResults
+            width: stack.width
+            visible: root.menuOpen
+            spacing: 0
+
+            // The composer centres the prompt, so the space below the text is
+            // already equal to the space above it -- but a hard rule reads
+            // tighter than text does, and the line sat close. Drop it by the
+            // composer's own top padding again, which keeps it proportional
+            // as the type scales instead of pinning it to a constant.
+            Item {
+              width: 1
+              height: Math.max(Style.space(6),
+                               Math.round((composer.height - prompt.height) / 2))
+            }
+
+            Rectangle {
+              width: parent.width
+              height: 1
+              color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.14)
+            }
+
+            // Each row carries half of Style.space(16) above its text and half
+            // below, so neighbours sit a full space(16) apart. The first row
+            // only had its own half against the rule, which read as crowded.
+            // The other half is added here, plus a few px: matching the
+            // inter-row gap exactly still read tight under a hard rule.
+            Item { width: 1; height: Style.space(11) }
+
+            Repeater {
+              model: root.menuOpen ? menuSearch.rows : []
+              delegate: Rectangle {
+                required property var modelData
+                required property int index
+                readonly property bool current: index === root.menuIndex
+                width: menuResults.width
+                height: rowText.implicitHeight + Style.space(16)
+                color: current
+                  ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.18)
+                  : "transparent"
+
+                // Menu rows carry a glyph in their own icon font; applications
+                // carry a real icon, resolved by the same AppLibrary the
+                // launcher uses. One column, either kind.
+                Item {
+                  id: rowIcon
+                  x: Style.space(6)
+                  // Optically centred, not mathematically. A line box carries
+                  // descender space the title glyphs mostly do not use, so
+                  // splitting it evenly parks the icon visibly low against the
+                  // text it labels. Lift it by a fraction of the type size.
+                  y: rowText.y
+                     + Math.round((rowTitle.implicitHeight - height) / 2)
+                     - Math.round(root.menuTitleSize * 0.09)
+                  width: root.menuTitleSize
+                  height: width
+
+                  Text {
+                    anchors.centerIn: parent
+                    visible: !modelData.isApp
+                    text: modelData.icon || ""
+                    color: parent.parent.current ? root.accent : root.foreground
+                    font.family: modelData.iconFont && modelData.iconFont.length > 0
+                      ? modelData.iconFont
+                      : Style.font.family
+                    font.pixelSize: Math.round(root.menuTitleSize * 0.8)
+                  }
+                  Image {
+                    anchors.fill: parent
+                    visible: modelData.isApp
+                    source: modelData.isApp && root.appLibrary
+                      ? root.appLibrary.iconSource(modelData.appIcon)
+                      : ""
+                    sourceSize.width: root.menuTitleSize
+                    sourceSize.height: root.menuTitleSize
+                    fillMode: Image.PreserveAspectFit
+                    smooth: true
+                  }
+                }
+
+                Column {
+                  id: rowText
+                  x: rowIcon.x + rowIcon.width + Style.space(10)
+                  width: parent.width - x - Style.space(8)
+                  anchors.verticalCenter: parent.verticalCenter
+                  spacing: Style.space(1)
+
+                  Text {
+                    id: rowTitle
+                    width: parent.width
+                    text: modelData.label
+                    color: parent.parent.current ? root.accent : root.foreground
+                    font.family: Style.font.family
+                    font.pixelSize: root.menuTitleSize
+                    elide: Text.ElideRight
+                  }
+                  Text {
+                    width: parent.width
+                    visible: String(modelData.path || "") !== ""
+                    text: modelData.path
+                    color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.45)
+                    font.family: Style.font.family
+                    font.pixelSize: root.menuPathSize
+                    elide: Text.ElideRight
+                  }
+                }
+
+                MouseArea {
+                  anchors.fill: parent
+                  hoverEnabled: true
+
+                  // positionChanged fires for two different events: the
+                  // pointer moved, or the row moved beneath a pointer that
+                  // did not. Only the first is intent. In window coordinates
+                  // the second leaves the position unchanged, so comparing
+                  // there tells them apart -- comparing in item coordinates
+                  // cannot, which is why this armed on its own before.
+                  onPositionChanged: function(mouse) {
+                    var at = mapToItem(null, mouse.x, mouse.y)
+                    if (Math.abs(at.x - root.menuMouseX) < 0.5
+                        && Math.abs(at.y - root.menuMouseY) < 0.5) return
+                    root.menuMouseX = at.x
+                    root.menuMouseY = at.y
+                    root.menuMouseArmed = true
+                    root.menuIndex = index
+                  }
+
+                  // A row arriving under the pointer records where it is so
+                  // the next move can be measured, but grants nothing: the
+                  // list is still keyboard territory until the mouse moves.
+                  onEntered: {
+                    if (root.menuMouseArmed) { root.menuIndex = index; return }
+                    var here = mapToItem(null, mouseX, mouseY)
+                    root.menuMouseX = here.x
+                    root.menuMouseY = here.y
+                  }
+
+                  // A click is already intent, so it never waits to be armed.
+                  onClicked: { root.menuIndex = index; root.menuActivate() }
+                }
+              }
             }
           }
         }

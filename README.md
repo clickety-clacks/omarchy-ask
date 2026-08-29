@@ -117,6 +117,26 @@ does not offer one.
   dismissed by that shortcut.
 - Markdown links open through the desktop's external URL handler.
 
+## Menu search
+
+Typing in the prompt also searches the Omarchy menu — the same rows, apps and
+`when:` conditions the `SUPER+SPACE` menu uses, read from its own definitions
+rather than duplicated here. Matches drop below the prompt; nothing is
+selected until you move to it, so `Return` always submits a prompt unless you
+have deliberately picked a row.
+
+- `Down`/`Up` or `Tab`/`Shift+Tab`: move through matches
+- `Return`: run the selected row, or submit a prompt when nothing is selected
+- `Escape`: drop the selection (the overlay's own `Escape` still closes it)
+
+Choosing a submenu opens it in the real menu; choosing an application launches
+it. Either way the overlay gets out of the way.
+
+Matching waits for a pause in typing so the card resizes once rather than on
+every keystroke. Tune that with `searchDebounceMs` in
+`~/.config/omarchy/ask.json` — milliseconds, `270` by default, `0` to match
+immediately. The file is watched, so an edit applies without a restart.
+
 ## Local state
 
 Ask keeps no transcript archive. Conversation text and ACP session state live
