@@ -314,14 +314,22 @@ Item {
   // The composer and the transcript therefore route keys through here, so the
   // conversation scrolls wherever the caret happens to be. Returns true when
   // the key was consumed.
-  function handleScrollKey(event) {
+  // requireModifier is set by the composer: while typing, bare arrows have to
+  // keep moving the caret, so only the Ctrl and Page forms scroll from there.
+  // The transcript, where nothing is being typed, takes the bare arrows too.
+  function handleScrollKey(event, requireModifier) {
     var ctrl = (event.modifiers & Qt.ControlModifier) !== 0
-    if (event.key === Qt.Key_Up || (ctrl && event.key === Qt.Key_K)) { scrollLine(0, -1); return true }
-    if (event.key === Qt.Key_Down || (ctrl && event.key === Qt.Key_J)) { scrollLine(0, 1); return true }
-    if (event.key === Qt.Key_Left || (ctrl && event.key === Qt.Key_H)) { scrollLine(-1, 0); return true }
-    if (event.key === Qt.Key_Right || (ctrl && event.key === Qt.Key_L)) { scrollLine(1, 0); return true }
+    if (ctrl && event.key === Qt.Key_K) { scrollLine(0, -1); return true }
+    if (ctrl && event.key === Qt.Key_J) { scrollLine(0, 1); return true }
+    if (ctrl && event.key === Qt.Key_H) { scrollLine(-1, 0); return true }
+    if (ctrl && event.key === Qt.Key_L) { scrollLine(1, 0); return true }
     if (event.key === Qt.Key_PageUp || (ctrl && event.key === Qt.Key_U)) { scrollPage(-1); return true }
     if (event.key === Qt.Key_PageDown || (ctrl && event.key === Qt.Key_D)) { scrollPage(1); return true }
+    if (requireModifier) return false
+    if (event.key === Qt.Key_Up) { scrollLine(0, -1); return true }
+    if (event.key === Qt.Key_Down) { scrollLine(0, 1); return true }
+    if (event.key === Qt.Key_Left) { scrollLine(-1, 0); return true }
+    if (event.key === Qt.Key_Right) { scrollLine(1, 0); return true }
     return false
   }
 
@@ -817,7 +825,7 @@ Item {
                   event.accepted = true
                   return
                 }
-                if (root.handleFontKey(event) || root.handlePinKey(event) || root.handleScrollKey(event)) {
+                if (root.handleFontKey(event) || root.handlePinKey(event) || root.handleScrollKey(event, true)) {
                   event.accepted = true
                 } else if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
                     && !(event.modifiers & Qt.ShiftModifier)) {
