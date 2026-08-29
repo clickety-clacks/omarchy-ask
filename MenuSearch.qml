@@ -98,10 +98,37 @@ Item {
         if (!app || root.appLibrary.isHiddenEntry(app)) continue
         var name = root.appLibrary.entryName(app)
         if (!name) continue
-        scored.push({
+        var subtext = root.appLibrary.entrySubtext(app) || ""
+
+        // Scored by the menu's own function rather than by position, so an
+        // application competes in the same numeric space as a menu row and
+        // the tiers interleave correctly. searchScore already knows about
+        // `kind: "app"`. depthFor tolerates a map holding only this entry:
+        // item() returns null for the missing parent and the walk stops.
+        var appAliases = [subtext]
+        try {
+          if (app.keywords && typeof app.keywords.join === "function")
+            appAliases = appAliases.concat(app.keywords)
+        } catch (e) { }
+
+        var appEntry = {
           id: "app:" + app.id,
+          parent: "apps",
+          kind: "app",
           label: name,
-          path: root.appLibrary.entrySubtext(app) || "Apps",
+          aliases: appAliases,
+          description: subtext,
+          // AppLibrary already ranked these; keep that as the tiebreak within
+          // a tier instead of discarding it.
+          order: a
+        }
+        var appItems = ({})
+        appItems[appEntry.id] = appEntry
+
+        scored.push({
+          id: appEntry.id,
+          label: name,
+          path: subtext || "Apps",
           icon: "",
           iconFont: "",
           isApp: true,
@@ -109,14 +136,15 @@ Item {
           appId: String(app.id || ""),
           action: "",
           route: "",
-          // sortedEntries is already ranked; keep that order just under an
-          // exact menu-row match rather than inventing a competing score.
-          score: 1000 - a
+          score: MenuModel.searchScore(appItems, appEntry, text)
         })
       }
     }
 
-    scored.sort(function(a, b) { return b.score - a.score })
+    // Ascending: searchScore counts up from 0 for the best match, and it
+    // already ranks a title hit above an alias hit above a description-only
+    // hit. Sorting the other way put the weakest matches first.
+    scored.sort(function(a, b) { return a.score - b.score })
     root.rows = scored.slice(0, root.maxRows)
   }
 
