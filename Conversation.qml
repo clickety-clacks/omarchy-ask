@@ -260,6 +260,11 @@ Item {
     if (!menuSearch.run(root.menuIndex)) return false
     prompt.text = ""
     root.menuIndex = -1
+    // Running a row is the whole errand: the overlay is ephemeral and has
+    // nothing left to show, so it gets out of the way of whatever just
+    // launched. A pinned conversation is a window someone kept on purpose,
+    // so it stays and only clears the box.
+    if (!root.pinned) root.close()
     return true
   }
 
