@@ -73,7 +73,8 @@ opening Ask again creates an independent conversation.
 
 - `Return`: submit
 - `Shift+Return`: insert a newline
-- `Escape`: close and discard the session
+- `Escape`: close and discard the session (overlay only — a pinned window closes
+  like any other window, through your window manager)
 - `Arrow keys` or `Ctrl+H/J/K/L`: scroll the conversation
 - `PageUp/PageDown` or `Ctrl+U/D`: scroll by page
 - `Ctrl+=` / `Ctrl+-`: grow or shrink the conversation text

@@ -884,7 +884,11 @@ Item {
       }
     }
 
-    Shortcut { sequence: "Escape"; onActivated: root.close() }
+    // No Escape shortcut here on purpose. A pinned conversation is a real
+    // toplevel window, so it closes the way every other window does, through
+    // the window manager. Closing it on Escape made a normal window behave
+    // like the overlay it was pinned out of, and took the key away from
+    // anything inside that might want it. The overlay keeps its Escape.
     WindowShortcuts { conversation: root }
     Shortcut {
       sequence: "Y"
