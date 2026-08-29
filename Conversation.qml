@@ -827,6 +827,13 @@ Item {
               color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.14)
             }
 
+            // Each row carries half of Style.space(16) above its text and half
+            // below, so neighbours sit a full space(16) apart. The first row
+            // only had its own half against the rule, which read as crowded.
+            // The other half is added here so the gap above the first item
+            // matches the gap between items.
+            Item { width: 1; height: Style.space(8) }
+
             Repeater {
               model: root.menuOpen ? menuSearch.rows : []
               delegate: Rectangle {
