@@ -4,7 +4,7 @@ An AI-enabled launcher for Omarchy.
 
 ![Omarchy Ask with "who watches the watchers" typed and the agent thinking](assets/omarchy-ask-prompt.png)
 
-![Omarchy Ask: "george, tell me about the rabbits", with the agent replying in character](assets/omarchy-ask.png)
+![Omarchy Ask: a short exchange, then "george, tell me about the rabbits" answered in character](assets/omarchy-ask.png)
 
 ![Typing "app" in the Ask prompt, with menu rows and installed applications listed beneath it](assets/omarchy-ask-menu-search.png)
 
