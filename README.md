@@ -75,6 +75,7 @@ opening Ask again creates an independent conversation.
 
 - `Return`: submit
 - `Shift+Return`: insert a newline
+- `Ctrl+W`: delete the word before the caret; `Ctrl+E`: jump to the end of the prompt
 - `Escape`: close and discard the session (overlay only — a pinned window closes
   like any other window, through your window manager)
 - `Arrow keys` or `Ctrl+H/J/K/L`: scroll the conversation

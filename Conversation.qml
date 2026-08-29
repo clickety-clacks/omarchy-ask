@@ -825,6 +825,26 @@ Item {
                   event.accepted = true
                   return
                 }
+                // Readline habits that a shell user's hands already have.
+                if (event.modifiers & Qt.ControlModifier) {
+                  if (event.key === Qt.Key_W) {
+                    // Delete back to the start of the previous word: skip the
+                    // whitespace behind the caret, then the word itself.
+                    var end = prompt.cursorPosition
+                    var start = end
+                    var value = prompt.text
+                    while (start > 0 && /\s/.test(value.charAt(start - 1))) start--
+                    while (start > 0 && !/\s/.test(value.charAt(start - 1))) start--
+                    if (start < end) prompt.remove(start, end)
+                    event.accepted = true
+                    return
+                  }
+                  if (event.key === Qt.Key_E) {
+                    prompt.cursorPosition = prompt.length
+                    event.accepted = true
+                    return
+                  }
+                }
                 if (root.handleFontKey(event) || root.handlePinKey(event) || root.handleScrollKey(event, true)) {
                   event.accepted = true
                 } else if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
