@@ -10,7 +10,7 @@ An AI-enabled launcher for Omarchy.
 
 - **One box, two jobs.** Type a question for Claude Code or Codex over ACP, or type a menu row and run it.
 - **Reads your real menu.** Same JSONC and `when:` conditions as `SUPER+SPACE` — new rows are searchable on save.
-- **Apps included.** Same library, icons and ranking as the launcher, in one flat list.
+- **Launches apps too.** Same entries, icons and ranking as the app launcher, in one flat list.
 - **Return means what you meant.** Empty selection submits the prompt; arrow onto a row and it runs.
 - **Zero residue.** Conversations exist only while the overlay is open.
 - **Pin it.** `Ctrl+P` turns a live conversation into a normal window.
@@ -105,7 +105,7 @@ does not offer one.
 
 ## Conversation behavior
 
-- The `>` marker identifies the input line; it is not sent to the agent.
+- The `▪` marker identifies the input line; it is not sent to the agent.
 - ACP `messageId` boundaries become separate assistant paragraphs.
 - Paragraph breaks inside an assistant reply are rendered with a blank line
   between them. Fenced code and list structure are left as the agent wrote them.
