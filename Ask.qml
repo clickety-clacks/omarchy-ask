@@ -5,6 +5,10 @@ import Quickshell.Io
 Item {
   id: root
 
+  // The shell assigns this if the property exists (shell.qml: `"shell" in item`).
+  // It is the only route to the shared AppLibrary, which is what makes
+  // applications searchable from the composer alongside menu rows.
+  property var shell: null
   property var activeOverlay: null
   property var conversations: []
   readonly property bool opened: activeOverlay !== null
@@ -91,6 +95,7 @@ Item {
     conversations = conversations.concat([conversation])
     activeOverlay = conversation
     conversation.fontScale = Qt.binding(function() { return root.fontScale })
+    conversation.shell = Qt.binding(function() { return root.shell })
     conversation.fontScaleStepRequested.connect(function(step) { root.adjustFontScale(step) })
     conversation.fontScaleResetRequested.connect(function() { root.setFontScale(1) })
     conversation.closed.connect(function() { root.removeConversation(conversation) })

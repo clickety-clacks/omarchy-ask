@@ -32,6 +32,9 @@ Item {
   property var checkedResults: ({})
 
   // What the composer is asking about, and what it gets back.
+  // Supplied by the conversation, which gets it from the shell. Without it
+  // only menu rows are searchable; applications are simply absent.
+  property var appLibrary: null
   property string query: ""
   property int maxRows: 8
   readonly property bool hasResults: rows.length > 0
@@ -57,7 +60,11 @@ Item {
     for (var i = 0; i < root.itemOrder.length; i++) {
       var id = root.itemOrder[i]
       var entry = root.items[id]
-      if (!entry || !entry.action) continue
+      if (!entry) continue
+      // Submenus compete too. "install" should find Install, and choosing it
+      // opens that menu rather than pretending a submenu is an action.
+      if (!entry.action && !entry.target && entry.kind !== "menu") continue
+      if (id === "root") continue
       var visible = MenuModel.isVisible(root.items, root.itemOrder, root.whenResults, entry)
       if (!visible) continue
       if (!MenuModel.matchesQuery(entry, text, visible)) continue
@@ -66,10 +73,44 @@ Item {
         label: MenuModel.labelFor(entry, root.checkedResults),
         path: MenuModel.parentPathFor(root.items, id),
         icon: entry.icon || "",
-        action: entry.action,
+        iconFont: entry.iconFont || "",
+        isApp: false,
+        appIcon: "",
+        appId: "",
+        action: entry.action || "",
+        route: entry.action ? "" : id,
         score: MenuModel.searchScore(root.items, entry, text)
       })
     }
+
+    // Applications come from the shell's own AppLibrary -- the same engine the
+    // launcher and the menu's `apps` provider use -- so ATC, Element X and the
+    // rest rank here exactly as they do there, icons included.
+    if (root.appLibrary) {
+      var appRows = root.appLibrary.sortedEntries(text)
+      for (var a = 0; a < appRows.length && a < 40; a++) {
+        var app = appRows[a].entry
+        if (!app || root.appLibrary.isHiddenEntry(app)) continue
+        var name = root.appLibrary.entryName(app)
+        if (!name) continue
+        scored.push({
+          id: "app:" + app.id,
+          label: name,
+          path: root.appLibrary.entrySubtext(app) || "Apps",
+          icon: "",
+          iconFont: "",
+          isApp: true,
+          appIcon: app.icon || "",
+          appId: String(app.id || ""),
+          action: "",
+          route: "",
+          // sortedEntries is already ranked; keep that order just under an
+          // exact menu-row match rather than inventing a competing score.
+          score: 1000 - a
+        })
+      }
+    }
+
     scored.sort(function(a, b) { return b.score - a.score })
     root.rows = scored.slice(0, root.maxRows)
   }
@@ -77,7 +118,16 @@ Item {
   function run(index) {
     if (index < 0 || index >= root.rows.length) return false
     var row = root.rows[index]
-    Util.execDetached(String(row.action))
+    if (row.isApp) {
+      if (!root.appLibrary) return false
+      root.appLibrary.launch(row.appId, row.label)
+    } else if (row.route) {
+      // A submenu opens in the real menu. Reimplementing drill-down here
+      // would be a second navigation model over the same rows.
+      Util.execDetached("omarchy menu summon " + row.route)
+    } else {
+      Util.execDetached(String(row.action))
+    }
     root.actionRan(row.label)
     return true
   }

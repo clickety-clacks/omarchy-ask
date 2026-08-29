@@ -256,9 +256,19 @@ Item {
     return true
   }
 
+  // Assigned by Ask.qml, which the shell assigns in turn.
+  property var shell: null
+  readonly property var appLibrary: root.shell ? root.shell.appLibrary : null
+
+  // Result text tracks the same scale as the prompt, so Ctrl +/- moves the
+  // whole box together rather than leaving the matches behind.
+  readonly property int menuTitleSize: Math.round(Style.font.body * 2 * root.fontScale)
+  readonly property int menuPathSize: Math.round(Style.font.caption * root.fontScale)
+
   MenuSearch {
     id: menuSearch
     query: root.waiting ? "" : prompt.text
+    appLibrary: root.appLibrary
     onQueryChanged: root.menuIndex = -1
   }
 
@@ -796,34 +806,72 @@ Item {
               delegate: Rectangle {
                 required property var modelData
                 required property int index
+                readonly property bool current: index === root.menuIndex
                 width: menuResults.width
-                height: rowLabel.implicitHeight + Style.space(14)
-                color: index === root.menuIndex
+                height: rowText.implicitHeight + Style.space(16)
+                color: current
                   ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.18)
                   : "transparent"
 
-                Text {
+                // Menu rows carry a glyph in their own icon font; applications
+                // carry a real icon, resolved by the same AppLibrary the
+                // launcher uses. One column, either kind.
+                Item {
                   id: rowIcon
-                  x: Style.space(4)
+                  x: Style.space(6)
                   anchors.verticalCenter: parent.verticalCenter
-                  text: modelData.icon || ""
-                  color: index === root.menuIndex ? root.accent : root.foreground
-                  font.family: Style.font.family
-                  font.pixelSize: Style.font.body
+                  width: root.menuTitleSize
+                  height: width
+
+                  Text {
+                    anchors.centerIn: parent
+                    visible: !modelData.isApp
+                    text: modelData.icon || ""
+                    color: parent.parent.current ? root.accent : root.foreground
+                    font.family: modelData.iconFont && modelData.iconFont.length > 0
+                      ? modelData.iconFont
+                      : Style.font.family
+                    font.pixelSize: Math.round(root.menuTitleSize * 0.8)
+                  }
+                  Image {
+                    anchors.fill: parent
+                    visible: modelData.isApp
+                    source: modelData.isApp && root.appLibrary
+                      ? root.appLibrary.iconSource(modelData.appIcon)
+                      : ""
+                    sourceSize.width: root.menuTitleSize
+                    sourceSize.height: root.menuTitleSize
+                    fillMode: Image.PreserveAspectFit
+                    smooth: true
+                  }
                 }
-                Text {
-                  id: rowLabel
-                  x: Style.space(30)
+
+                Column {
+                  id: rowText
+                  x: rowIcon.x + rowIcon.width + Style.space(10)
                   width: parent.width - x - Style.space(8)
                   anchors.verticalCenter: parent.verticalCenter
-                  text: modelData.path
-                    ? modelData.label + "   " + modelData.path
-                    : modelData.label
-                  color: index === root.menuIndex ? root.accent : root.foreground
-                  font.family: Style.font.family
-                  font.pixelSize: Style.font.body
-                  elide: Text.ElideRight
+                  spacing: Style.space(1)
+
+                  Text {
+                    width: parent.width
+                    text: modelData.label
+                    color: parent.parent.current ? root.accent : root.foreground
+                    font.family: Style.font.family
+                    font.pixelSize: root.menuTitleSize
+                    elide: Text.ElideRight
+                  }
+                  Text {
+                    width: parent.width
+                    visible: String(modelData.path || "") !== ""
+                    text: modelData.path
+                    color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.45)
+                    font.family: Style.font.family
+                    font.pixelSize: root.menuPathSize
+                    elide: Text.ElideRight
+                  }
                 }
+
                 MouseArea {
                   anchors.fill: parent
                   hoverEnabled: true
