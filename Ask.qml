@@ -28,6 +28,9 @@ Item {
   readonly property int minSearchDebounceMs: 0
   readonly property int maxSearchDebounceMs: 2000
   property int searchDebounceMs: 270
+  property real keyboardLineImpulse: 335
+  property real keyboardDeceleration: 608
+  readonly property real keyboardPageImpulse: keyboardLineImpulse * (740 / 360)
   property bool settingsLoaded: false
   // Retained so writing the font scale cannot drop the mode the bridge owns.
   property string persistedPermissionMode: "permission"
@@ -40,6 +43,15 @@ Item {
   }
 
   function adjustFontScale(step) { setFontScale(fontScale + step) }
+
+  function setKeyboardMotion(impulse, deceleration) {
+    var nextImpulse = Math.round(Math.max(80, Math.min(2000, impulse)))
+    var nextDeceleration = Math.round(Math.max(100, Math.min(5000, deceleration)))
+    if (nextImpulse === keyboardLineImpulse && nextDeceleration === keyboardDeceleration) return
+    keyboardLineImpulse = nextImpulse
+    keyboardDeceleration = nextDeceleration
+    if (settingsLoaded) settingsSaveTimer.restart()
+  }
 
   function loadSettings(raw) {
     var data = {}
@@ -54,6 +66,14 @@ Item {
     searchDebounceMs = isFinite(debounce)
       ? Math.round(Math.max(minSearchDebounceMs, Math.min(maxSearchDebounceMs, debounce)))
       : 270
+    var impulse = Number(data.keyboardLineImpulse)
+    keyboardLineImpulse = isFinite(impulse)
+      ? Math.round(Math.max(80, Math.min(2000, impulse)))
+      : 335
+    var deceleration = Number(data.keyboardDeceleration)
+    keyboardDeceleration = isFinite(deceleration)
+      ? Math.round(Math.max(100, Math.min(5000, deceleration)))
+      : 608
     settingsLoaded = true
   }
 
@@ -62,7 +82,9 @@ Item {
     settingsFile.setText(JSON.stringify({
       permissionMode: persistedPermissionMode,
       fontScale: fontScale,
-      searchDebounceMs: searchDebounceMs
+      searchDebounceMs: searchDebounceMs,
+      keyboardLineImpulse: keyboardLineImpulse,
+      keyboardDeceleration: keyboardDeceleration
     }, null, 2) + "\n")
   }
 
@@ -86,6 +108,16 @@ Item {
     onTriggered: root.flushSettings()
   }
 
+  MotionTuner {
+    id: motionTuner
+    impulse: root.keyboardLineImpulse
+    deceleration: root.keyboardDeceleration
+    onMotionChanged: function(nextImpulse, nextDeceleration) {
+      root.setKeyboardMotion(nextImpulse, nextDeceleration)
+    }
+    onResetRequested: root.setKeyboardMotion(335, 608)
+  }
+
   Component {
     id: conversationComponent
     Conversation {}
@@ -98,6 +130,7 @@ Item {
       if (conversations[i] !== conversation) remaining.push(conversations[i])
     }
     conversations = remaining
+    if (remaining.length === 0) motionTuner.visible = false
     Qt.callLater(function() { conversation.destroy() })
   }
 
@@ -109,8 +142,13 @@ Item {
     conversation.fontScale = Qt.binding(function() { return root.fontScale })
     conversation.shell = Qt.binding(function() { return root.shell })
     conversation.searchDebounceMs = Qt.binding(function() { return root.searchDebounceMs })
+    conversation.keyboardLineImpulse = Qt.binding(function() { return root.keyboardLineImpulse })
+    conversation.keyboardPageImpulse = Qt.binding(function() { return root.keyboardPageImpulse })
+    conversation.keyboardDeceleration = Qt.binding(function() { return root.keyboardDeceleration })
+    conversation.motionTunerOpen = Qt.binding(function() { return motionTuner.visible })
     conversation.fontScaleStepRequested.connect(function(step) { root.adjustFontScale(step) })
     conversation.fontScaleResetRequested.connect(function() { root.setFontScale(1) })
+    conversation.motionTunerRequested.connect(function() { motionTuner.open() })
     conversation.closed.connect(function() { root.removeConversation(conversation) })
     conversation.pinnedChanged.connect(function() {
       if (conversation.pinned && root.activeOverlay === conversation)

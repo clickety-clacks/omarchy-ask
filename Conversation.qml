@@ -29,6 +29,15 @@ Item {
   property real fontScale: 1
   signal fontScaleStepRequested(real step)
   signal fontScaleResetRequested()
+  signal motionTunerRequested()
+  property real keyboardLineImpulse: 335
+  property real keyboardPageImpulse: 689
+  property real keyboardDeceleration: 608
+  property bool motionTunerOpen: false
+  onMotionTunerOpenChanged: {
+    if (!motionTunerOpen && opened && !pinned)
+      Qt.callLater(function() { prompt.forceActiveFocus() })
+  }
 
   // Anchoring pins a freshly submitted prompt to the top of the viewport and
   // lets the reply fill the space beneath it. `tailSpace` is scratch room
@@ -107,6 +116,9 @@ Item {
 
   function close() {
     agent.running = false
+    keyboardVelocityY = 0
+    keyboardCoast.stop()
+    trackpadCoast.stop()
     entranceTimer.stop()
     cardFade.stop()
     veilFade.stop()
@@ -141,7 +153,7 @@ Item {
   function scrollToEnd() {
     // An anchor glide owns the viewport until it lands. Streaming chunks that
     // arrive mid-glide must not snap it to the end.
-    if (anchorScroll.running) return
+    if (anchorScroll.running || keyboardCoast.running || trackpadCoast.running) return
     horizontalScroll.stop()
     verticalScroll.stop()
     // Let the border absorb ordinary growth. Only scroll once the surface has
@@ -172,6 +184,9 @@ Item {
       : (verticalScroll.running ? verticalScroll.to : surface.contentY)
     // Any deliberate scroll takes the viewport back from the glide.
     anchorScroll.stop()
+    keyboardVelocityY = 0
+    keyboardCoast.stop()
+    trackpadCoast.stop()
     var nextX = Math.max(0, Math.min(maxX, baseX + dx))
     var nextY = Math.max(0, Math.min(maxY, baseY + dy))
     if (nextX !== baseX) {
@@ -196,6 +211,49 @@ Item {
     scrollBy(0, direction * Math.max(Style.space(44), surface.height * 0.85))
   }
 
+  // Keyboard motion is integrated frame by frame. A NumberAnimation cannot
+  // model repeated force impulses: restarting an eased position animation on
+  // every auto-repeat discards its time derivative, and inferring velocity
+  // from the remaining distance is invalid once the easing curve is not the
+  // constant-deceleration curve used by that inference.
+  property real keyboardVelocityY: 0
+  property double keyboardSampleTime: 0
+  function coastVertically(velocity) {
+    trackpadCoast.stop()
+    var speed = Math.min(surface.maximumFlickVelocity, Math.abs(velocity))
+    if (speed <= 40) return
+    var direction = velocity < 0 ? -1 : 1
+    var distance = speed * speed / (2 * surface.flickDeceleration)
+    var maxY = Math.max(0, surface.contentHeight - surface.height)
+    var destination = Math.max(0, Math.min(maxY,
+      surface.contentY + direction * distance))
+    if (Math.abs(destination - surface.contentY) <= 1) return
+    trackpadCoast.from = surface.contentY
+    trackpadCoast.to = destination
+    // Preserve the sampled trackpad stopping distance while stretching its
+    // presentation enough for the final loss of momentum to remain legible.
+    trackpadCoast.duration = Math.max(900, Math.min(2800,
+      Math.round(speed * 1800 / surface.flickDeceleration)))
+    trackpadCoast.start()
+  }
+
+  function scrollKeyImpulse(dx, dy, page) {
+    // The transcript is normally vertical, but retain the old horizontal
+    // behavior if a future delegate makes it wider than the viewport.
+    if (dx !== 0) scrollBy(dx * Style.space(44), 0)
+    if (dy === 0) return
+    horizontalScroll.stop()
+    verticalScroll.stop()
+    anchorScroll.stop()
+    surface.cancelFlick()
+    trackpadCoast.stop()
+    var impulse = page ? root.keyboardPageImpulse : root.keyboardLineImpulse
+    keyboardVelocityY = Math.max(-surface.maximumFlickVelocity,
+      Math.min(surface.maximumFlickVelocity, keyboardVelocityY + dy * impulse))
+    keyboardSampleTime = Date.now()
+    keyboardCoast.start()
+  }
+
   function stepFontScale(step) { fontScaleStepRequested(step) }
   function resetFontScale() { fontScaleResetRequested() }
 
@@ -215,6 +273,9 @@ Item {
       horizontalScroll.stop()
       verticalScroll.stop()
       anchorScroll.stop()
+      keyboardVelocityY = 0
+      keyboardCoast.stop()
+      trackpadCoast.stop()
       var maxY = Math.max(0, surface.contentHeight - surface.height)
       var target = Math.min(root.anchorY, maxY)
       if (Math.abs(target - surface.contentY) < 1) {
@@ -309,6 +370,13 @@ Item {
     return true
   }
 
+  function handleMotionTunerKey(event) {
+    if ((event.modifiers & Qt.ControlModifier) === 0) return false
+    if (event.key !== Qt.Key_Comma) return false
+    motionTunerRequested()
+    return true
+  }
+
   // Every text item in the card takes focus when it is clicked, and a focused
   // TextEdit claims the navigation keys before a window shortcut can see them.
   // The composer and the transcript therefore route keys through here, so the
@@ -319,17 +387,17 @@ Item {
   // The transcript, where nothing is being typed, takes the bare arrows too.
   function handleScrollKey(event, requireModifier) {
     var ctrl = (event.modifiers & Qt.ControlModifier) !== 0
-    if (ctrl && event.key === Qt.Key_K) { scrollLine(0, -1); return true }
-    if (ctrl && event.key === Qt.Key_J) { scrollLine(0, 1); return true }
-    if (ctrl && event.key === Qt.Key_H) { scrollLine(-1, 0); return true }
-    if (ctrl && event.key === Qt.Key_L) { scrollLine(1, 0); return true }
-    if (event.key === Qt.Key_PageUp || (ctrl && event.key === Qt.Key_U)) { scrollPage(-1); return true }
-    if (event.key === Qt.Key_PageDown || (ctrl && event.key === Qt.Key_D)) { scrollPage(1); return true }
+    if (ctrl && event.key === Qt.Key_K) { scrollKeyImpulse(0, -1, false); return true }
+    if (ctrl && event.key === Qt.Key_J) { scrollKeyImpulse(0, 1, false); return true }
+    if (ctrl && event.key === Qt.Key_H) { scrollKeyImpulse(-1, 0, false); return true }
+    if (ctrl && event.key === Qt.Key_L) { scrollKeyImpulse(1, 0, false); return true }
+    if (event.key === Qt.Key_PageUp || (ctrl && event.key === Qt.Key_U)) { scrollKeyImpulse(0, -1, true); return true }
+    if (event.key === Qt.Key_PageDown || (ctrl && event.key === Qt.Key_D)) { scrollKeyImpulse(0, 1, true); return true }
     if (requireModifier) return false
-    if (event.key === Qt.Key_Up) { scrollLine(0, -1); return true }
-    if (event.key === Qt.Key_Down) { scrollLine(0, 1); return true }
-    if (event.key === Qt.Key_Left) { scrollLine(-1, 0); return true }
-    if (event.key === Qt.Key_Right) { scrollLine(1, 0); return true }
+    if (event.key === Qt.Key_Up) { scrollKeyImpulse(0, -1, false); return true }
+    if (event.key === Qt.Key_Down) { scrollKeyImpulse(0, 1, false); return true }
+    if (event.key === Qt.Key_Left) { scrollKeyImpulse(-1, 0, false); return true }
+    if (event.key === Qt.Key_Right) { scrollKeyImpulse(1, 0, false); return true }
     return false
   }
 
@@ -340,23 +408,24 @@ Item {
     // An inline component does not share the enclosing document's scope, so
     // the conversation is handed in rather than reached through its id.
     required property Item conversation
-    Shortcut { sequence: "Up"; onActivated: conversation.scrollLine(0, -1) }
-    Shortcut { sequence: "Down"; onActivated: conversation.scrollLine(0, 1) }
-    Shortcut { sequence: "Left"; onActivated: conversation.scrollLine(-1, 0) }
-    Shortcut { sequence: "Right"; onActivated: conversation.scrollLine(1, 0) }
-    Shortcut { sequence: "Ctrl+H"; onActivated: conversation.scrollLine(-1, 0) }
-    Shortcut { sequence: "Ctrl+J"; onActivated: conversation.scrollLine(0, 1) }
-    Shortcut { sequence: "Ctrl+K"; onActivated: conversation.scrollLine(0, -1) }
-    Shortcut { sequence: "Ctrl+L"; onActivated: conversation.scrollLine(1, 0) }
-    Shortcut { sequence: "Ctrl+U"; onActivated: conversation.scrollPage(-1) }
-    Shortcut { sequence: "Ctrl+D"; onActivated: conversation.scrollPage(1) }
-    Shortcut { sequence: "PageUp"; onActivated: conversation.scrollPage(-1) }
-    Shortcut { sequence: "PageDown"; onActivated: conversation.scrollPage(1) }
+    Shortcut { sequence: "Up"; onActivated: conversation.scrollKeyImpulse(0, -1, false) }
+    Shortcut { sequence: "Down"; onActivated: conversation.scrollKeyImpulse(0, 1, false) }
+    Shortcut { sequence: "Left"; onActivated: conversation.scrollKeyImpulse(-1, 0, false) }
+    Shortcut { sequence: "Right"; onActivated: conversation.scrollKeyImpulse(1, 0, false) }
+    Shortcut { sequence: "Ctrl+H"; onActivated: conversation.scrollKeyImpulse(-1, 0, false) }
+    Shortcut { sequence: "Ctrl+J"; onActivated: conversation.scrollKeyImpulse(0, 1, false) }
+    Shortcut { sequence: "Ctrl+K"; onActivated: conversation.scrollKeyImpulse(0, -1, false) }
+    Shortcut { sequence: "Ctrl+L"; onActivated: conversation.scrollKeyImpulse(1, 0, false) }
+    Shortcut { sequence: "Ctrl+U"; onActivated: conversation.scrollKeyImpulse(0, -1, true) }
+    Shortcut { sequence: "Ctrl+D"; onActivated: conversation.scrollKeyImpulse(0, 1, true) }
+    Shortcut { sequence: "PageUp"; onActivated: conversation.scrollKeyImpulse(0, -1, true) }
+    Shortcut { sequence: "PageDown"; onActivated: conversation.scrollKeyImpulse(0, 1, true) }
     Shortcut { sequence: "Ctrl+="; onActivated: conversation.stepFontScale(0.1) }
     Shortcut { sequence: "Ctrl++"; onActivated: conversation.stepFontScale(0.1) }
     Shortcut { sequence: "Ctrl+-"; onActivated: conversation.stepFontScale(-0.1) }
     Shortcut { sequence: "Ctrl+0"; onActivated: conversation.resetFontScale() }
     Shortcut { sequence: "Ctrl+P"; onActivated: conversation.pinConversation() }
+    Shortcut { sequence: "Ctrl+,"; onActivated: conversation.motionTunerRequested() }
   }
 
   function submit() {
@@ -548,7 +617,11 @@ Item {
     color: "transparent"
     WlrLayershell.namespace: "omarchy-ask"
     WlrLayershell.layer: WlrLayer.Overlay
-    WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
+    // Let the auxiliary motion window become active without dismissing this
+    // layer popup, then reclaim exclusive prompt focus when it closes.
+    WlrLayershell.keyboardFocus: root.motionTunerOpen
+      ? WlrKeyboardFocus.OnDemand
+      : WlrKeyboardFocus.Exclusive
     exclusionMode: ExclusionMode.Ignore
 
     Shortcut { sequence: "Escape"; onActivated: root.close() }
@@ -609,7 +682,48 @@ Item {
         contentWidth: width
         contentHeight: stack.height + root.tailSpace
         interactive: contentHeight > height
+        flickableDirection: Flickable.VerticalFlick
         boundsBehavior: Flickable.StopAtBounds
+        maximumFlickVelocity: 6000
+        flickDeceleration: 650
+        onDraggingChanged: {
+          if (!dragging) return
+          root.keyboardVelocityY = 0
+          keyboardCoast.stop()
+          horizontalScroll.stop()
+          verticalScroll.stop()
+          anchorScroll.stop()
+          trackpadCoast.stop()
+        }
+
+        Timer {
+          id: keyboardCoast
+          interval: 16
+          repeat: true
+          onTriggered: {
+            var now = Date.now()
+            var elapsed = Math.max(1, Math.min(40, now - root.keyboardSampleTime)) / 1000
+            root.keyboardSampleTime = now
+            var velocity = root.keyboardVelocityY
+            var maxY = Math.max(0, surface.contentHeight - surface.height)
+            var nextY = Math.max(0, Math.min(maxY, surface.contentY + velocity * elapsed))
+            surface.contentY = nextY
+
+            if ((nextY <= 0 && velocity < 0) || (nextY >= maxY && velocity > 0)) {
+              root.keyboardVelocityY = 0
+              stop()
+              return
+            }
+
+            var loss = root.keyboardDeceleration * elapsed
+            if (Math.abs(velocity) <= loss) {
+              root.keyboardVelocityY = 0
+              stop()
+            } else {
+              root.keyboardVelocityY = velocity > 0 ? velocity - loss : velocity + loss
+            }
+          }
+        }
 
         NumberAnimation {
           id: horizontalScroll
@@ -634,20 +748,86 @@ Item {
           duration: 320
           easing.type: Easing.OutCubic
         }
+        // A precision-scroll gesture is not a pointer drag, so handing its
+        // sampled velocity back to Flickable.flick() is unreliable after
+        // cancelFlick(): on some Qt/Wayland paths the synthetic flick is
+        // discarded with the wheel sequence that just ended. Animate the
+        // stopping distance directly instead. The cubic ease gives the coast
+        // a long, soft tail; distance derives from deceleration while the
+        // presentation duration is stretched enough to make that tail read.
+        NumberAnimation {
+          id: trackpadCoast
+          target: surface
+          property: "contentY"
+          easing.type: Easing.OutQuint
+        }
 
-        // Declared inside a Flickable, a handler attaches to the content item,
-        // which covers the viewport exactly when there is something to scroll.
-        // Mouse notches drive the same animated step the keys use; trackpads
-        // keep the Flickable's own pixel-precise handling.
+        // Qt/Wayland may report a two-finger trackpad stream as either a
+        // touchpad or a mouse. Pixel deltas distinguish that stream from a
+        // click wheel, whose notches keep using the animated keyboard step.
         WheelHandler {
+          id: trackpadWheel
           target: null
-          acceptedDevices: PointerDevice.Mouse
-          onWheel: function(event) {
-            var steps = event.angleDelta.y / 120
-            var sideways = event.angleDelta.x / 120
-            if (steps === 0 && sideways === 0) return
-            root.scrollLine(-sideways * 3, -steps * 3)
+          blocking: true
+          acceptedButtons: Qt.NoButton
+          acceptedDevices: PointerDevice.TouchPad | PointerDevice.Mouse
+          property double lastSampleTime: 0
+          property real releaseVelocityY: 0
+
+          function coast() {
+            coastTimer.stop()
+            root.coastVertically(-releaseVelocityY)
+            lastSampleTime = 0
+            releaseVelocityY = 0
           }
+
+          onWheel: function(wheel) {
+            if (wheel.pixelDelta.x === 0 && wheel.pixelDelta.y === 0) {
+              var steps = wheel.angleDelta.y / 120
+              var sideways = wheel.angleDelta.x / 120
+              if (steps !== 0 || sideways !== 0)
+                root.scrollLine(-sideways * 3, -steps * 3)
+              wheel.accepted = true
+              return
+            }
+
+            horizontalScroll.stop()
+            verticalScroll.stop()
+            anchorScroll.stop()
+            root.keyboardVelocityY = 0
+            keyboardCoast.stop()
+            trackpadCoast.stop()
+            surface.cancelFlick()
+
+            var now = Date.now()
+            var firstSample = wheel.phase === Qt.ScrollBegin || lastSampleTime === 0
+            if (firstSample) {
+              lastSampleTime = now
+              releaseVelocityY = 0
+            }
+            if (wheel.phase === Qt.ScrollEnd) {
+              coast()
+              wheel.accepted = true
+              return
+            }
+
+            var elapsed = firstSample ? 16 : Math.max(1, Math.min(80, now - lastSampleTime))
+            var dy = wheel.pixelDelta.y
+            releaseVelocityY = releaseVelocityY * 0.55 + dy * 1000 / elapsed * 0.45
+            lastSampleTime = now
+
+            var maxY = Math.max(0, surface.contentHeight - surface.height)
+            surface.contentY = Math.max(0, Math.min(maxY, surface.contentY - dy))
+            coastTimer.restart()
+            wheel.accepted = true
+          }
+
+        }
+
+        Timer {
+          id: coastTimer
+          interval: 55
+          onTriggered: trackpadWheel.coast()
         }
 
         Column {
@@ -698,7 +878,7 @@ Item {
                 selectionColor: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.32)
                 selectedTextColor: root.foreground
                 Keys.onPressed: function(event) {
-                  if (root.handleFontKey(event) || root.handlePinKey(event) || root.handleScrollKey(event)) event.accepted = true
+                  if (root.handleFontKey(event) || root.handlePinKey(event) || root.handleMotionTunerKey(event) || root.handleScrollKey(event)) event.accepted = true
                 }
               }
               TextEdit {
@@ -718,7 +898,7 @@ Item {
                 selectedTextColor: root.foreground
                 onLinkActivated: function(link) { Qt.openUrlExternally(link) }
                 Keys.onPressed: function(event) {
-                  if (root.handleFontKey(event) || root.handlePinKey(event) || root.handleScrollKey(event)) event.accepted = true
+                  if (root.handleFontKey(event) || root.handlePinKey(event) || root.handleMotionTunerKey(event) || root.handleScrollKey(event)) event.accepted = true
                 }
               }
             }
@@ -845,7 +1025,7 @@ Item {
                     return
                   }
                 }
-                if (root.handleFontKey(event) || root.handlePinKey(event) || root.handleScrollKey(event, true)) {
+                if (root.handleFontKey(event) || root.handlePinKey(event) || root.handleMotionTunerKey(event) || root.handleScrollKey(event, true)) {
                   event.accepted = true
                 } else if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
                     && !(event.modifiers & Qt.ShiftModifier)) {

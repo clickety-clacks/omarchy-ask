@@ -41,8 +41,18 @@ Confirm the configured shortcut opens a centered overlay with an input caret,
 3. Confirm assistant text is sans-serif, user prompts remain serif/italic, and
    there is breathing room before the next input.
 4. Click a Markdown link and confirm the desktop URL handler opens it.
-5. Use arrows, Page Up/Down, and Ctrl+H/J/K/L/U/D to scroll.
-6. While a long response streams, scroll upward. Confirm later chunks do not
+5. Use arrows, Page Up/Down, and Ctrl+H/J/K/L/U/D to scroll. Confirm each
+   press supplies momentum, held/repeated keys build speed, opposite keys
+   brake or reverse it, and the transcript coasts to a stop after release.
+6. Scroll a long transcript with a trackpad and with a touch drag. Confirm the
+   surface coasts after release and stops cleanly at both ends.
+7. Press Ctrl+, from the composer and the transcript. Confirm the motion editor
+   opens as a companion popup immediately right of Ask and both remain usable.
+   Drag its curve endpoint and verify impulse,
+   friction, distance, and duration update live in every open conversation;
+   close and reopen Ask and confirm the values persisted. Reset restores the
+   defaults.
+8. While a long response streams, scroll upward. Confirm later chunks do not
    pull the viewport down. Return to the bottom and confirm following resumes.
 
 ## Permission checklist

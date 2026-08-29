@@ -82,6 +82,8 @@ opening Ask again creates an independent conversation.
 - `PageUp/PageDown` or `Ctrl+U/D`: scroll by page
 - `Ctrl+=` / `Ctrl+-`: grow or shrink the conversation text
 - `Ctrl+0`: return the conversation text to its default size
+- `Ctrl+,`: open the live scroll-motion curve editor beside Ask; drag its
+  endpoint to choose coast distance and duration directly
 - Mouse selection and `Ctrl+C`: copy conversation text
 - `Ctrl+V`: paste into the prompt
 - `Y` / `N`: allow or deny a pending tool request
