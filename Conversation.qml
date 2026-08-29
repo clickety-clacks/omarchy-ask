@@ -780,6 +780,18 @@ Item {
                   event.accepted = true
                   return
                 }
+                // Tab walks the results too, but only while they are showing;
+                // otherwise Tab keeps whatever it already did in the box.
+                // Shift+Tab arrives as Backtab, so matching Key_Tab alone
+                // would catch the forward direction and silently miss the
+                // reverse.
+                if (root.menuOpen
+                    && (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab)) {
+                  root.menuMove(event.key === Qt.Key_Backtab
+                    || (event.modifiers & Qt.ShiftModifier) ? -1 : 1)
+                  event.accepted = true
+                  return
+                }
                 if (event.key === Qt.Key_Escape && root.menuSelected) {
                   root.menuIndex = -1
                   event.accepted = true
