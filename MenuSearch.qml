@@ -37,6 +37,11 @@ Item {
   property var appLibrary: null
   property string query: ""
   property int maxRows: 8
+  // Matching is cheap, but every change to the row count resizes the card,
+  // and the card animates its height. Recomputing per keystroke therefore
+  // made fast typing look like the window was flinching. Wait for a pause in
+  // typing and resize once, on what was actually typed.
+  property int debounceMs: 160
   readonly property bool hasResults: rows.length > 0
   property var rows: []
 
@@ -132,7 +137,24 @@ Item {
     return true
   }
 
-  onQueryChanged: refreshRows()
+  // Clearing the box collapses the list at once -- there is nothing to settle
+  // on, and holding an empty result open for the debounce would just look
+  // broken. Everything else waits for the pause.
+  onQueryChanged: {
+    if (String(root.query || "").trim() === "") {
+      searchDebounce.stop()
+      root.rows = []
+      return
+    }
+    searchDebounce.restart()
+  }
+
+  Timer {
+    id: searchDebounce
+    interval: root.debounceMs
+    repeat: false
+    onTriggered: root.refreshRows()
+  }
 
   // ------------------------------------------------------------ definitions
   // Watched, so an edit to either file lands here without a restart -- the
