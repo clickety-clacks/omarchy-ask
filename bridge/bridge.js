@@ -34,7 +34,7 @@ async function loadSettings() {
 }
 
 async function savePermissionMode(mode) {
-  permissionMode = mode === "yolo" ? "yolo" : "permission";
+  const nextMode = mode === "yolo" ? "yolo" : "permission";
   await mkdir(settingsDir, { recursive: true });
   // The UI writes its own keys (font scale) to this file. Merge rather than
   // replace so toggling the mode cannot drop them.
@@ -43,10 +43,11 @@ async function savePermissionMode(mode) {
     const parsed = JSON.parse(await readFile(settingsPath, "utf8"));
     if (parsed && typeof parsed === "object") settings = parsed;
   } catch {}
-  settings.permissionMode = permissionMode;
+  settings.permissionMode = nextMode;
   await writeFile(settingsPath, `${JSON.stringify(settings, null, 2)}\n`, {
     mode: 0o600,
   });
+  permissionMode = nextMode;
 }
 
 function emit(event) {
@@ -58,6 +59,50 @@ function messageText(content) {
   if (typeof content === "string") return content;
   if (content.type === "text") return content.text || "";
   return "";
+}
+
+function flatOptions(options) {
+  const result = [];
+  for (const option of options || []) {
+    if (Array.isArray(option.options)) result.push(...option.options);
+    else result.push(option);
+  }
+  return result;
+}
+
+function matchingValue(config, wanted) {
+  if (!wanted) return "";
+  const needle = wanted.toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const option = flatOptions(config?.options).find((candidate) => {
+    const text = `${candidate.value || ""} ${candidate.name || ""}`
+      .toLowerCase().replace(/[^a-z0-9]+/g, "");
+    return text.includes(needle);
+  });
+  return option?.value || "";
+}
+
+async function applyRequestedModel(configOptions) {
+  const requests = [
+    { wanted: process.env.ASK_MODEL, ids: ["model"], categories: ["model"] },
+    { wanted: process.env.ASK_REASONING_EFFORT,
+      ids: ["reasoning_effort"], categories: ["thought_level"] },
+  ];
+  for (const request of requests) {
+    if (!request.wanted) continue;
+    const config = (configOptions || []).find((option) =>
+      request.ids.includes(option.id) || request.categories.includes(option.category));
+    const value = matchingValue(config, request.wanted);
+    if (!config || !value) {
+      emit({ type: "diagnostic", text: `Configured ACP option unavailable: ${request.wanted}` });
+      continue;
+    }
+    const response = await connection.setSessionConfigOption({
+      sessionId,
+      configId: config.id,
+      value,
+    });
+    configOptions = response.configOptions || configOptions;
+  }
 }
 
 const child = spawn(agentBinary, [], {
@@ -79,6 +124,8 @@ let sessionId = null;
 let connection = null;
 let turnRunning = false;
 let shuttingDown = false;
+let childExitResolve;
+const childExited = new Promise((resolve) => { childExitResolve = resolve; });
 
 const client = {
   sessionUpdate(params) {
@@ -116,8 +163,7 @@ const client = {
       kind: option.kind,
     }));
     if (permissionMode === "yolo") {
-      const option = options.find((item) => item.kind === "allow_once")
-        || options.find((item) => item.kind.startsWith("allow"));
+      const option = options.find((item) => item.kind === "allow_once");
       if (option) {
         emit({ type: "status", text: `YOLO · ${title}` });
         return Promise.resolve({ outcome: { outcome: "selected", optionId: option.id } });
@@ -140,10 +186,11 @@ async function start() {
   connection = new ClientSideConnection(() => client, stream);
   const initialized = await connection.initialize({
     protocolVersion: PROTOCOL_VERSION,
-    clientCapabilities: {},
+    clientCapabilities: { session: { configOptions: {} } },
   });
   const session = await connection.newSession({ cwd, mcpServers: [] });
   sessionId = session.sessionId;
+  await applyRequestedModel(session.configOptions || []);
   emit({
     type: "ready",
     agent: agentName,
@@ -174,10 +221,7 @@ function answerPermission(message) {
   if (!pending) return;
   pendingPermissions.delete(message.id);
   const wantedKind = message.allow ? "allow_once" : "reject_once";
-  const option = pending.options.find((item) => item.kind === wantedKind)
-    || pending.options.find((item) => message.allow
-      ? item.kind.startsWith("allow")
-      : item.kind.startsWith("reject"));
+  const option = pending.options.find((item) => item.kind === wantedKind);
   if (option) {
     pending.resolve({ outcome: { outcome: "selected", optionId: option.id } });
   } else {
@@ -188,8 +232,7 @@ function answerPermission(message) {
 
 function allowAllPendingPermissions() {
   for (const [id, pending] of pendingPermissions.entries()) {
-    const option = pending.options.find((item) => item.kind === "allow_once")
-      || pending.options.find((item) => item.kind.startsWith("allow"));
+    const option = pending.options.find((item) => item.kind === "allow_once");
     pendingPermissions.delete(id);
     pending.resolve(option
       ? { outcome: { outcome: "selected", optionId: option.id } }
@@ -204,11 +247,19 @@ async function shutdown() {
     resolve({ outcome: { outcome: "cancelled" } });
   }
   pendingPermissions.clear();
+  const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+  // Bound graceful ACP close before signalling the child. Remain alive long
+  // enough to reap it; a detached kill timer cannot help after bridge exit.
   try {
-    if (connection && sessionId) await connection.closeSession({ sessionId });
+    if (connection && sessionId)
+      await Promise.race([connection.closeSession({ sessionId }), delay(350)]);
   } catch {}
-  child.kill("SIGTERM");
-  setTimeout(() => child.kill("SIGKILL"), 500).unref();
+  if (child.exitCode === null && child.signalCode === null) child.kill("SIGTERM");
+  await Promise.race([childExited, delay(500)]);
+  if (child.exitCode === null && child.signalCode === null) {
+    child.kill("SIGKILL");
+    await Promise.race([childExited, delay(150)]);
+  }
 }
 
 const input = createInterface({ input: process.stdin, crlfDelay: Infinity });
@@ -232,7 +283,11 @@ input.on("line", (line) => {
       if (permissionMode === "yolo") allowAllPendingPermissions();
       emit({ type: "permission_mode", mode: permissionMode });
     }).catch((error) => {
-      emit({ type: "error", message: `Could not save permission mode: ${error.message}` });
+      emit({
+        type: "permission_mode_error",
+        mode: permissionMode,
+        message: `Could not save permission mode: ${error.message}`,
+      });
     });
   } else if (message.type === "cancel" && connection && sessionId) {
     connection.cancel({ sessionId }).catch(() => {});
@@ -243,10 +298,11 @@ input.on("line", (line) => {
 input.on("close", () => shutdown());
 
 child.on("exit", (code, signal) => {
+  childExitResolve({ code, signal });
   if (!shuttingDown) {
     emit({ type: "fatal", message: `ACP agent exited (${signal || code})` });
+    process.exit(code || 0);
   }
-  process.exit(code || 0);
 });
 child.on("error", (error) => {
   emit({ type: "fatal", message: error.message });

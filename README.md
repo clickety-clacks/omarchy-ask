@@ -40,6 +40,27 @@ Add a Hyprland binding to `~/.config/hypr/bindings.lua`:
 o.bind("CTRL + SHIFT + SPACE", "Ask", "omarchy-shell shell toggle clickety-clacks.ask '{}'")
 ```
 
+To let Ask receive chords that are globally bound in Hyprland, define a modal
+submap and enable it in `ask.json`:
+
+```lua
+hl.define_submap("omarchy-ask", function()
+  hl.bind("CTRL + SHIFT + SPACE", hl.dsp.exec_cmd("omarchy-shell shell toggle clickety-clacks.ask '{}'"))
+  hl.bind("SUPER + ESCAPE", hl.dsp.submap("reset")) -- crash-safe escape hatch
+end)
+```
+
+```json
+{ "useHyprlandShortcutSubmap": true }
+```
+
+Ask's manager serializes entry and reset for the current layer popup only; a
+pinned or older conversation cannot reset a newer overlay's submap. Startup
+also resets a stale `omarchy-ask` submap left by an earlier shell failure.
+Normal global bindings remain registered and untouched. Leave the setting
+false unless the matching Hyprland submap exists. `SUPER+ESCAPE` is the
+out-of-process recovery path after a hard shell crash.
+
 Then reload Hyprland:
 
 ```sh
@@ -82,8 +103,27 @@ opening Ask again creates an independent conversation.
 - `PageUp/PageDown` or `Ctrl+U/D`: scroll by page
 - `Ctrl+=` / `Ctrl+-`: grow or shrink the conversation text
 - `Ctrl+0`: return the conversation text to its default size
+- `Ctrl+1` through `Ctrl+0`: move selection to the corresponding visible
+  result (first through tenth); repeat the same shortcut to perform its normal
+  Return action, or press Return/modifier+Return for a specific action
 - `Ctrl+,`: open the live scroll-motion curve editor beside Ask; drag its
   endpoint to choose coast distance and duration directly
+- Arithmetic, functions, aggregates such as `sum 10 34 100`, and unit
+  conversions such as `10 km in miles` appear as the first suggestion even
+  inside ordinary prose. Selecting the row copies its answer.
+- Matching files and Git repositories appear as compact aggregate suggestions.
+  Select one to enter its inline result mode, or start with `@` for files, `^`
+  for repositories, and `%` for open windows. The prompt marker changes to the
+  boxed mode sigil; Backspace on an empty mode query returns to normal search.
+  File and repository searches cover the user's full home directory by
+  default. Set `ASK_FILE_ROOT` in the shell environment to intentionally limit
+  both indexes to a different directory. Repository discovery defaults to six
+  directory levels; set `repoSearchDepth` in `ask.json` to another depth, or
+  to `0` for unlimited traversal. `ASK_REPO_SEARCH_DEPTH` overrides that value.
+  Terminal windows are enriched from their process trees, including SSH/Mosh
+  hosts and tmux session names, and `%` results are grouped by workspace.
+  Focused-mode results use a bounded scrolling viewport and retain the complete
+  backend match set (up to 100 files/repositories and 40 windows).
 - Mouse selection and `Ctrl+C`: copy conversation text
 - `Ctrl+V`: paste into the prompt
 - `Y` / `N`: allow or deny a pending tool request
@@ -141,12 +181,27 @@ every keystroke. Tune that with `searchDebounceMs` in
 `~/.config/omarchy/ask.json` — milliseconds, `270` by default, `0` to match
 immediately. The file is watched, so an edit applies without a restart.
 
+File opening and editing can optionally be delegated to separate commands in
+the same file. Commands are argv arrays; Ask appends the selected path as the
+final argument and does not invoke a shell:
+
+```json
+{
+  "fileOpenCommand": ["rifle", "-c", "/home/me/.config/rifle/view.conf"],
+  "fileEditCommand": ["rifle", "-c", "/home/me/.config/rifle/edit.conf"]
+}
+```
+
+Either setting may instead be a single executable string. When absent or
+empty, Return retains `xdg-open` and Alt+Return retains
+`omarchy-launch-editor`; Rifle is optional and is not an Ask dependency.
+
 ## Local state
 
 Ask keeps no transcript archive. Conversation text and ACP session state live
 only in their conversation process and disappear when its window is closed. The
-durable application state is the Ask/YOLO choice and the conversation text
-size, both held in:
+durable application state, including optional file open/edit commands, is held
+in:
 
 ```text
 ~/.config/omarchy/ask.json

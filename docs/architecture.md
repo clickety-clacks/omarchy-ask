@@ -53,12 +53,14 @@ The durable mode is `permission` or `yolo`, stored in
 
 - Ask mode queues every ACP permission request and requires an explicit button
   or `Y` / `N` response.
-- YOLO selects an option of kind `allow_once`, falling back only to another
-  ACP option whose kind starts with `allow`.
+- YOLO selects only an option whose kind is exactly `allow_once`.
 - If no allow option exists, YOLO cancels the request. It must never invent an
   option ID or bypass ACP.
 - Switching to YOLO resolves already queued permissions through the same ACP
   option-selection rule.
+- The UI does not commit or clear its permission queue until the bridge has
+  persisted the requested mode and acknowledged it. A failed write retains
+  Ask mode and the visible request.
 - Tool input, query parameters, credentials, and permission payloads are not
   written to the settings file.
 
@@ -91,8 +93,9 @@ The input's `>` is visual chrome and is never included in the submitted text.
 
 Omarchy Ask intentionally stores no transcript. QML holds rendered messages in
 memory; closing the owning conversation clears them. The app-owned durable
-state is the permission mode and the conversation font scale, both in
-`ask.json`. That file has two writers — `bridge.js` for the mode, `Ask.qml` for
+state includes permission, display, motion, search, and optional file
+open/edit command settings in `ask.json`. That file has two writers —
+`bridge.js` for the mode, `Ask.qml` for
 the scale — so each must merge into the existing contents rather than replace
 them.
 

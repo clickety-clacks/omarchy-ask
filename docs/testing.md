@@ -31,7 +31,11 @@ omarchy restart shell
 ```
 
 Confirm the configured shortcut opens a centered overlay with an input caret,
-`>` marker, Ask/YOLO label, and bottom-right pin icon.
+square marker, Ask/YOLO label, and bottom-right pin icon. With
+`useHyprlandShortcutSubmap` enabled, confirm `hyprctl submap` reports
+`omarchy-ask` while the overlay is mapped and `default` after close or pin.
+Confirm a main-map chord such as Ctrl+Return reaches Ask inside the overlay and
+its original global binding still exists and works after dismissal.
 
 ## Conversation checklist
 
@@ -52,7 +56,37 @@ Confirm the configured shortcut opens a centered overlay with an input caret,
    friction, distance, and duration update live in every open conversation;
    close and reopen Ask and confirm the values persisted. Reset restores the
    defaults.
-8. While a long response streams, scroll upward. Confirm later chunks do not
+8. Type `Hey what is 5+5`, `sum 10 34 100 110 123`, `72 F to C`, and
+   `5 GiB in MB`. Confirm the calculator is always the first row, its equation
+   is subordinate to the answer, long equations elide in the middle, and
+   selecting it copies the answer. Confirm prose containing an isolated number
+   does not produce a calculator row.
+9. Type text matching files and repositories. Confirm compact `matched files`
+   and `matched git repos` rows rank near the top without flooding ordinary
+   menu results. Select each and confirm Ask enters the corresponding inline
+   result mode. Repeat by typing `@`, `^`, and `%`; confirm the square marker
+   becomes the boxed prefix and Backspace on an empty query restores the
+   square. Confirm `%` groups windows under workspace headers without making
+   those headers selectable. Confirm hover/keyboard selection reveals the complete action hint.
+   Confirm focused modes scroll inside a bounded result viewport and that all
+   backend matches remain reachable rather than stopping after eight rows.
+   Confirm Return opens the result, Ctrl+Return opens its containing folder,
+   and Shift+Return copies the absolute path. Confirm all three actions close
+   the transient overlay but leave a pinned Ask window open. Confirm the first
+   ten visible rows show Ctrl+1 through
+   Ctrl+0, that each shortcut only moves the selection, and that the numbering
+   follows the visible viewport 0.5 seconds after scrolling stops. Confirm
+   repeating the same shortcut performs the row's normal Return action.
+   Confirm arrows scroll the list when selection crosses a viewport edge;
+   after independent scrolling leaves selection off-screen, Down snaps to the
+   first visible row and Up snaps to the last visible row.
+   Configure distinct `fileOpenCommand` and `fileEditCommand` argv arrays;
+   confirm Return and Alt+Return append the selected path to the corresponding
+   command. Remove them and confirm the legacy fallbacks still run.
+   Coast into either end of the transcript and file list. Confirm momentum
+   terminates as soon as the boundary is reached rather than leaving the
+   surface in a running coast state.
+10. While a long response streams, scroll upward. Confirm later chunks do not
    pull the viewport down. Return to the bottom and confirm following resumes.
 
 ## Permission checklist
@@ -97,3 +131,6 @@ journalctl --user --since '5 minutes ago' --no-pager \
 - The exact open → pin → one shortcut sequence succeeds.
 - The manifest version equals the intended tag without the leading `v`.
 - The source tree and installed plugin contain every QML entry/dependency file.
+
+The guarded GitHub release workflow and maintainer procedure are documented in
+[`release.md`](release.md).

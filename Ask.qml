@@ -1,6 +1,9 @@
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import Quickshell.Wayland
+import qs.Commons
+import qs.Ui
 
 Item {
   id: root
@@ -30,10 +33,89 @@ Item {
   property int searchDebounceMs: 270
   property real keyboardLineImpulse: 335
   property real keyboardDeceleration: 608
+  property var fileOpenCommand: []
+  property var fileEditCommand: []
+  property bool useHyprlandShortcutSubmap: false
+  property int repoSearchDepth: 6
   readonly property real keyboardPageImpulse: keyboardLineImpulse * (740 / 360)
   property bool settingsLoaded: false
   // Retained so writing the font scale cannot drop the mode the bridge owns.
   property string persistedPermissionMode: "permission"
+  property bool copyToastVisible: false
+  // One manager owns the compositor submap. Conversations only affect the
+  // derived desired state; they never dispatch Hyprland commands themselves.
+  readonly property bool shortcutSubmapDesired: useHyprlandShortcutSubmap
+    && activeOverlay !== null && activeOverlay.opened && !activeOverlay.pinned
+  property bool shortcutSubmapOwned: false
+  property bool shortcutSubmapTarget: false
+  property bool shortcutSubmapInitialized: false
+  property int shortcutSubmapFailures: 0
+
+  onShortcutSubmapDesiredChanged: {
+    shortcutSubmapRetry.stop()
+    shortcutSubmapFailures = 0
+    reconcileShortcutSubmap()
+  }
+
+  function reconcileShortcutSubmap() {
+    if (!shortcutSubmapInitialized || shortcutSubmapProc.running) return
+    if (shortcutSubmapDesired === shortcutSubmapOwned) return
+    shortcutSubmapTarget = shortcutSubmapDesired
+    shortcutSubmapProc.command = [
+      "hyprctl", "dispatch",
+      "hl.dsp.submap(\"" + (shortcutSubmapTarget ? "omarchy-ask" : "reset") + "\")"
+    ]
+    shortcutSubmapProc.running = true
+  }
+
+  Process {
+    id: shortcutSubmapProbe
+    command: ["hyprctl", "submap"]
+    stdout: StdioCollector {}
+    Component.onCompleted: running = true
+    onExited: function(exitCode) {
+      var current = String(stdout.text || "").trim()
+      root.shortcutSubmapOwned = current === "omarchy-ask"
+      root.shortcutSubmapInitialized = true
+      root.reconcileShortcutSubmap()
+    }
+  }
+
+  Process {
+    id: shortcutSubmapProc
+    onExited: function(exitCode) {
+      if (exitCode === 0) {
+        root.shortcutSubmapOwned = root.shortcutSubmapTarget
+        root.shortcutSubmapFailures = 0
+        root.reconcileShortcutSubmap()
+      } else {
+        root.shortcutSubmapFailures++
+        shortcutSubmapRetry.interval = Math.min(8000,
+          250 * Math.pow(2, Math.min(5, root.shortcutSubmapFailures - 1)))
+        shortcutSubmapRetry.restart()
+      }
+    }
+  }
+
+  Timer {
+    id: shortcutSubmapRetry
+    repeat: false
+    onTriggered: root.reconcileShortcutSubmap()
+  }
+
+  Component.onDestruction: {
+    // Best effort for graceful plugin unload. SUPER+ESCAPE remains the crash
+    // recovery path because no in-process cleanup can run after SIGKILL.
+    if (shortcutSubmapOwned || shortcutSubmapDesired)
+      Quickshell.execDetached(["hyprctl", "dispatch", "hl.dsp.submap(\"reset\")"])
+  }
+
+  function showCopyToast() {
+    copyToastFade.stop()
+    copyToastCard.opacity = 1
+    copyToastVisible = true
+    copyToastHold.restart()
+  }
 
   function setFontScale(value) {
     var next = Math.max(minFontScale, Math.min(maxFontScale, Math.round(value * 100) / 100))
@@ -74,7 +156,26 @@ Item {
     keyboardDeceleration = isFinite(deceleration)
       ? Math.round(Math.max(100, Math.min(5000, deceleration)))
       : 608
+    fileOpenCommand = normalizeCommand(data.fileOpenCommand)
+    fileEditCommand = normalizeCommand(data.fileEditCommand)
+    useHyprlandShortcutSubmap = data.useHyprlandShortcutSubmap === true
+    var repoDepth = Number(data.repoSearchDepth)
+    repoSearchDepth = isFinite(repoDepth)
+      ? (repoDepth <= 0 ? 0 : Math.max(1, Math.min(128, Math.round(repoDepth))))
+      : 6
     settingsLoaded = true
+  }
+
+  function normalizeCommand(value) {
+    if (typeof value === "string")
+      return value.trim() === "" ? [] : [value.trim()]
+    if (!Array.isArray(value)) return []
+    var command = []
+    for (var i = 0; i < value.length; i++) {
+      var argument = String(value[i] || "")
+      if (argument !== "") command.push(argument)
+    }
+    return command
   }
 
   function flushSettings() {
@@ -84,7 +185,11 @@ Item {
       fontScale: fontScale,
       searchDebounceMs: searchDebounceMs,
       keyboardLineImpulse: keyboardLineImpulse,
-      keyboardDeceleration: keyboardDeceleration
+      keyboardDeceleration: keyboardDeceleration,
+      fileOpenCommand: fileOpenCommand,
+      fileEditCommand: fileEditCommand,
+      useHyprlandShortcutSubmap: useHyprlandShortcutSubmap,
+      repoSearchDepth: repoSearchDepth
     }, null, 2) + "\n")
   }
 
@@ -118,6 +223,57 @@ Item {
     onResetRequested: root.setKeyboardMotion(335, 608)
   }
 
+  PanelWindow {
+    id: copyToast
+    visible: root.copyToastVisible
+    anchors { top: true; bottom: true; left: true; right: true }
+    color: "transparent"
+    WlrLayershell.namespace: "omarchy-ask-copied"
+    WlrLayershell.layer: WlrLayer.Overlay
+    WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+    exclusionMode: ExclusionMode.Ignore
+    mask: Region { item: copyToastCard }
+
+    BorderSurface {
+      id: copyToastCard
+      width: copyToastText.implicitWidth + Style.space(42)
+      height: Style.space(58)
+      anchors.horizontalCenter: parent.horizontalCenter
+      y: Math.round(parent.height * 0.22)
+      color: Color.menu.background
+      radius: Style.cornerRadius
+      borderSpec: Border.surfaceSpec("menu", "border", Color.accent,
+        Math.max(1, Style.space(2)))
+
+      Text {
+        id: copyToastText
+        anchors.centerIn: parent
+        text: "✓  Copied!"
+        color: Color.accent
+        font.family: Style.font.family
+        font.pixelSize: Math.round(Style.font.body * (4 / 3))
+        font.bold: true
+      }
+    }
+
+    Timer {
+      id: copyToastHold
+      interval: 1500
+      onTriggered: copyToastFade.restart()
+    }
+
+    NumberAnimation {
+      id: copyToastFade
+      target: copyToastCard
+      property: "opacity"
+      from: 1
+      to: 0
+      duration: 500
+      easing.type: Easing.OutQuad
+      onFinished: root.copyToastVisible = false
+    }
+  }
+
   Component {
     id: conversationComponent
     Conversation {}
@@ -145,16 +301,24 @@ Item {
     conversation.keyboardLineImpulse = Qt.binding(function() { return root.keyboardLineImpulse })
     conversation.keyboardPageImpulse = Qt.binding(function() { return root.keyboardPageImpulse })
     conversation.keyboardDeceleration = Qt.binding(function() { return root.keyboardDeceleration })
+    conversation.fileOpenCommand = Qt.binding(function() { return root.fileOpenCommand })
+    conversation.fileEditCommand = Qt.binding(function() { return root.fileEditCommand })
     conversation.motionTunerOpen = Qt.binding(function() { return motionTuner.visible })
     conversation.fontScaleStepRequested.connect(function(step) { root.adjustFontScale(step) })
     conversation.fontScaleResetRequested.connect(function() { root.setFontScale(1) })
     conversation.motionTunerRequested.connect(function() { motionTuner.open() })
+    conversation.copyConfirmed.connect(function() { root.showCopyToast() })
+    conversation.permissionModeConfirmed.connect(function(mode) {
+      root.persistedPermissionMode = mode === "yolo" ? "yolo" : "permission"
+    })
     conversation.closed.connect(function() { root.removeConversation(conversation) })
     conversation.pinnedChanged.connect(function() {
       if (conversation.pinned && root.activeOverlay === conversation)
         root.activeOverlay = null
+      root.reconcileShortcutSubmap()
     })
     conversation.open(payloadJson || "{}")
+    reconcileShortcutSubmap()
     return conversation
   }
 
@@ -166,6 +330,7 @@ Item {
   function close() {
     if (activeOverlay && activeOverlay.opened && !activeOverlay.pinned)
       activeOverlay.close()
+    reconcileShortcutSubmap()
   }
 
   function pinActive() {
@@ -176,6 +341,7 @@ Item {
   function closeAll() {
     var snapshot = conversations.slice()
     for (var i = 0; i < snapshot.length; i++) snapshot[i].close()
+    reconcileShortcutSubmap()
   }
 
   function toggle(payloadJson) {

@@ -44,8 +44,27 @@ Item {
   property int debounceMs: 270
   readonly property bool hasResults: rows.length > 0
   property var rows: []
+  property var mathRow: null
+  property int mathRequestId: 0
+  property var fileRows: []
+  property int fileMatchCount: 0
+  property bool fileMatchCapped: false
+  property bool fileMatchComplete: true
+  property var repoRows: []
+  property int repoMatchCount: 0
+  property bool repoMatchCapped: false
+  property bool repoMatchComplete: true
+  property var windowRows: []
+  property int fileRequestId: 0
+  property int windowRequestId: 0
+  property bool fileMode: false
+  property bool repoMode: false
+  property string fileQueryOverride: ""
+  property bool lastRunKeepsOpen: false
 
   signal actionRan(string label)
+  signal browseRequested(string mode, string query)
+  signal pathActionRequested(string path, bool repository, string verb)
 
   function rebuild() {
     var merged = MenuModel.mergeMenuSources(root.defaultMenuItems, root.userMenuItems)
@@ -60,8 +79,118 @@ Item {
   function refreshRows() {
     var text = String(root.query || "").trim()
     if (text === "") { root.rows = []; return }
+    var windowOnly = text.indexOf("%") === 0
+    var fileOnly = text.indexOf("@") === 0
+    var repoOnly = text.indexOf("^") === 0
+    var focusedMode = windowOnly || fileOnly || repoOnly
 
     var scored = []
+    // Math is a suggestion, not a routing mode. It always ranks first when a
+    // deterministic parser finds an expression anywhere in the prose; the
+    // original prompt still goes to ACP unless this row is deliberately
+    // selected.
+    if (!focusedMode && root.mathRow && root.mathRow.query === root.query) scored.push({
+      id: "math:" + root.mathRequestId,
+      label: root.mathRow.expression + " = " + root.mathRow.answer,
+      path: "",
+      icon: "",
+      iconFont: "",
+      isApp: false,
+      isMath: true,
+      equation: root.mathRow.expression + " =",
+      answer: root.mathRow.answer,
+      appIcon: "",
+      appId: "",
+      action: "",
+      route: "",
+      score: -2
+    })
+    if (!focusedMode && !root.fileMode && root.fileRows.length > 0) scored.push({
+      id: "file-results",
+      label: root.fileMatchCount + (root.fileMatchCapped ? "+" : "")
+        + " matched files" + (!root.fileMatchCapped && !root.fileMatchComplete ? "…" : ""),
+      path: "Files",
+      icon: "󰈞",
+      iconFont: "JetBrainsMono Nerd Font",
+      isApp: false,
+      isMath: false,
+      isFileAggregate: true,
+      appIcon: "", appId: "", action: "", route: "", score: -1
+    })
+    if (!focusedMode && !root.repoMode && root.repoRows.length > 0) scored.push({
+      id: "repo-results",
+      label: root.repoMatchCount + (root.repoMatchCapped ? "+" : "")
+        + " matched git repos" + (!root.repoMatchCapped && !root.repoMatchComplete ? "…" : ""),
+      path: "Repositories",
+      icon: "󰊢",
+      iconFont: "JetBrainsMono Nerd Font",
+      isApp: false,
+      isMath: false,
+      isRepoAggregate: true,
+      appIcon: "", appId: "", action: "", route: "", score: -0.9
+    })
+    for (var w = 0; !fileOnly && !repoOnly && w < root.windowRows.length
+         && w < (windowOnly ? 40 : 3); w++) {
+      var window = root.windowRows[w]
+      scored.push({
+        id: "window:" + window.stableId,
+        label: window.title,
+        path: (windowOnly ? "" : "Workspace " + window.workspace + " · ")
+          + (window.detail ? window.detail + " · " : "") + window.class,
+        workspace: String(window.workspace || ""),
+        icon: "󰖯",
+        iconFont: "JetBrainsMono Nerd Font",
+        isApp: false,
+        isMath: false,
+        isWindow: true,
+        stableId: window.stableId,
+        appIcon: "", appId: "", action: "", route: "",
+        score: -0.8 + Number(window.score || 0) * 0.01
+      })
+    }
+    if (fileOnly || repoOnly) {
+      var matches = repoOnly ? root.repoRows : root.fileRows
+      for (var f = 0; f < matches.length; f++) {
+        var match = matches[f]
+        scored.push({
+          id: (repoOnly ? "repo:" : "file:") + String(match.path || ""),
+          label: match.name || match.path || "",
+          path: match.relativePath || match.path || "",
+          icon: repoOnly ? "󰊢" : "󰈞",
+          iconFont: "JetBrainsMono Nerd Font",
+          isApp: false,
+          isMath: false,
+          isPath: true,
+          isRepository: repoOnly,
+          absolutePath: String(match.path || ""),
+          actionHint: repoOnly
+            ? "↵ terminal  ·  Ctrl+↵ reveal  ·  Shift+↵ copy path"
+            : "↵ view  ·  Ctrl+↵ reveal  ·  Alt+↵ edit  ·  Shift+↵ copy",
+          appIcon: "", appId: "", action: "", route: "", score: f
+        })
+      }
+      root.rows = scored
+      return
+    }
+    if (windowOnly) {
+      scored.sort(function(a, b) {
+        var aNumber = Number(a.workspace)
+        var bNumber = Number(b.workspace)
+        var bothNumeric = isFinite(aNumber) && isFinite(bNumber)
+        var workspaceOrder = bothNumeric ? aNumber - bNumber
+          : String(a.workspace).localeCompare(String(b.workspace))
+        return workspaceOrder || a.score - b.score || a.label.localeCompare(b.label)
+      })
+      var grouped = scored
+      var priorWorkspace = ""
+      for (var g = 0; g < grouped.length; g++) {
+        grouped[g].workspaceHeader = grouped[g].workspace !== priorWorkspace
+          ? "Workspace " + grouped[g].workspace : ""
+        priorWorkspace = grouped[g].workspace
+      }
+      root.rows = grouped
+      return
+    }
     for (var i = 0; i < root.itemOrder.length; i++) {
       var id = root.itemOrder[i]
       var entry = root.items[id]
@@ -148,12 +277,31 @@ Item {
     root.rows = scored.slice(0, root.maxRows)
   }
 
-  function run(index) {
+  function run(index, modifiers) {
     if (index < 0 || index >= root.rows.length) return false
     var row = root.rows[index]
-    if (row.isApp) {
+    root.lastRunKeepsOpen = false
+    if (row.isMath) {
+      Quickshell.execDetached(["wl-copy", String(row.answer)])
+    } else if (row.isFileAggregate || row.isRepoAggregate) {
+      root.lastRunKeepsOpen = true
+      root.browseRequested(row.isRepoAggregate ? "repos" : "files", root.query)
+      return true
+    } else if (row.isPath) {
+      var flags = Number(modifiers || 0)
+      var verb = (flags & Qt.ControlModifier) !== 0 ? "reveal"
+        : ((flags & Qt.ShiftModifier) !== 0 ? "copy"
+        : ((flags & Qt.AltModifier) !== 0 ? "edit" : "open"))
+      root.pathActionRequested(row.absolutePath, Boolean(row.isRepository), verb)
+    } else if (row.isApp) {
       if (!root.appLibrary) return false
       root.appLibrary.launch(row.appId, row.label)
+    } else if (row.isWindow) {
+      Quickshell.execDetached([
+        "node",
+        Quickshell.env("HOME") + "/.config/omarchy/plugins/clickety-clacks.ask/bridge/windows.js",
+        "--focus", String(row.stableId || "")
+      ])
     } else if (row.route) {
       // A submenu opens in the real menu. Reimplementing drill-down here
       // would be a second navigation model over the same rows.
@@ -171,10 +319,142 @@ Item {
   onQueryChanged: {
     if (String(root.query || "").trim() === "") {
       searchDebounce.stop()
+      root.mathRow = null
+      root.fileRows = []
+      root.fileMatchCount = 0
+      root.fileMatchCapped = false
+      root.fileMatchComplete = true
+      root.repoRows = []
+      root.repoMatchCount = 0
+      root.repoMatchCapped = false
+      root.repoMatchComplete = true
+      root.windowRows = []
       root.rows = []
       return
     }
+    root.mathRequestId++
+    if (mathProc.running) mathProc.write(JSON.stringify({
+      id: root.mathRequestId,
+      query: root.query
+    }) + "\n")
+    root.requestFiles()
+    root.requestWindows()
     searchDebounce.restart()
+  }
+
+  onFileQueryOverrideChanged: if (root.fileMode || root.repoMode) root.requestFiles()
+  onFileModeChanged: if (root.fileMode) root.requestFiles()
+  onRepoModeChanged: if (root.repoMode) root.requestFiles()
+
+  function requestFiles() {
+    var focused = root.fileMode || root.repoMode
+      || /^[@^]/.test(String(root.query || "").trim())
+    var wanted = (root.fileMode || root.repoMode) ? root.fileQueryOverride : root.query
+    wanted = String(wanted || "").replace(/^[@^]/, "").trim()
+    // Rows belong to one query generation. Clear them before advancing the id
+    // so the UI cannot briefly relabel the previous query's 100 results as
+    // matches for the text that was just typed.
+    root.fileRows = []
+    root.fileMatchCount = 0
+    root.fileMatchCapped = false
+    root.fileMatchComplete = true
+    root.repoRows = []
+    root.repoMatchCount = 0
+    root.repoMatchCapped = false
+    root.repoMatchComplete = true
+    root.fileRequestId++
+    if (fileProc.running) fileProc.write(JSON.stringify({
+      id: root.fileRequestId,
+      query: wanted,
+      focused: focused
+    }) + "\n")
+  }
+
+  function acceptFiles(line) {
+    try {
+      var message = JSON.parse(String(line || ""))
+      if (Number(message.id) !== root.fileRequestId) return
+      if (message.repoOnly !== true) {
+        root.fileRows = message.rows || []
+        root.fileMatchCount = Number(message.totalMatched) || root.fileRows.length
+        root.fileMatchCapped = message.capped === true
+        root.fileMatchComplete = message.complete !== false
+      }
+      if (Array.isArray(message.repos)) {
+        root.repoRows = message.repos
+        root.repoMatchCount = Number(message.repoTotalMatched) || root.repoRows.length
+        root.repoMatchCapped = message.repoCapped === true
+        root.repoMatchComplete = message.repoComplete !== false
+      }
+      if (!root.fileMode && !root.repoMode) root.refreshRows()
+    } catch (error) { }
+  }
+
+  function requestWindows() {
+    var wanted = String(root.query || "").trim().replace(/^%/, "").trim()
+    root.windowRequestId++
+    if (windowProc.running) windowProc.write(JSON.stringify({
+      id: root.windowRequestId, query: wanted
+    }) + "\n")
+  }
+
+  function acceptWindows(line) {
+    try {
+      var message = JSON.parse(String(line || ""))
+      if (Number(message.id) !== root.windowRequestId) return
+      root.windowRows = message.rows || []
+      root.refreshRows()
+    } catch (error) { }
+  }
+
+  function acceptMath(line) {
+    try {
+      var message = JSON.parse(String(line || ""))
+      if (Number(message.id) !== root.mathRequestId) return
+      root.mathRow = message.result ? {
+        query: String(message.query || ""),
+        expression: String(message.result.expression || ""),
+        answer: String(message.result.answer || "")
+      } : null
+      root.refreshRows()
+    } catch (error) { }
+  }
+
+  Process {
+    id: mathProc
+    command: [
+      "node",
+      Quickshell.env("HOME") + "/.config/omarchy/plugins/clickety-clacks.ask/bridge/math.js"
+    ]
+    running: true
+    stdinEnabled: true
+    onStarted: if (String(root.query || "").trim() !== "")
+      write(JSON.stringify({ id: root.mathRequestId, query: root.query }) + "\n")
+    stdout: SplitParser { onRead: function(line) { root.acceptMath(line) } }
+  }
+
+  Process {
+    id: fileProc
+    command: [
+      "node",
+      Quickshell.env("HOME") + "/.config/omarchy/plugins/clickety-clacks.ask/bridge/files.js"
+    ]
+    running: true
+    stdinEnabled: true
+    onStarted: root.requestFiles()
+    stdout: SplitParser { onRead: function(line) { root.acceptFiles(line) } }
+  }
+
+  Process {
+    id: windowProc
+    command: [
+      "node",
+      Quickshell.env("HOME") + "/.config/omarchy/plugins/clickety-clacks.ask/bridge/windows.js"
+    ]
+    running: true
+    stdinEnabled: true
+    onStarted: root.requestWindows()
+    stdout: SplitParser { onRead: function(line) { root.acceptWindows(line) } }
   }
 
   Timer {
