@@ -88,6 +88,12 @@ its original global binding still exists and works after dismissal.
    surface in a running coast state.
 10. While a long response streams, scroll upward. Confirm later chunks do not
    pull the viewport down. Return to the bottom and confirm following resumes.
+11. With Codex selected, submit a turn that remains active long enough to type
+    a correction. Confirm the composer remains enabled, Return inserts the
+    correction into the transcript, and the subsequent response follows the
+    correction without ending the session. With an agent that does not
+    advertise `_meta.steering.supported`, confirm the composer remains hidden
+    while its turn is active.
 
 ## Permission checklist
 

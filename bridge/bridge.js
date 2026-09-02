@@ -123,6 +123,7 @@ let permissionSequence = 0;
 let sessionId = null;
 let connection = null;
 let turnRunning = false;
+let steeringSupported = false;
 let shuttingDown = false;
 let childExitResolve;
 const childExited = new Promise((resolve) => { childExitResolve = resolve; });
@@ -188,6 +189,7 @@ async function start() {
     protocolVersion: PROTOCOL_VERSION,
     clientCapabilities: { session: { configOptions: {} } },
   });
+  steeringSupported = initialized?._meta?.steering?.supported === true;
   const session = await connection.newSession({ cwd, mcpServers: [] });
   sessionId = session.sessionId;
   await applyRequestedModel(session.configOptions || []);
@@ -196,6 +198,7 @@ async function start() {
     agent: agentName,
     sessionId,
     capabilities: initialized.agentCapabilities || {},
+    steeringSupported,
     permissionMode,
   });
 }
@@ -214,6 +217,19 @@ async function prompt(text) {
   } finally {
     turnRunning = false;
   }
+}
+
+async function steer(text) {
+  if (!connection || !sessionId) throw new Error("ACP session is not ready");
+  if (!turnRunning) throw new Error("There is no active turn to steer");
+  if (!steeringSupported) throw new Error("This ACP agent does not support steering");
+  const response = await connection.request("_session/steering", {
+    sessionId,
+    prompt: [{ type: "text", text }],
+  });
+  const outcome = response?.outcome || "failed";
+  if (outcome === "failed") throw new Error("The agent could not apply the steering prompt");
+  emit({ type: "steered", outcome });
 }
 
 function answerPermission(message) {
@@ -275,6 +291,10 @@ input.on("line", (line) => {
     prompt(String(message.text || "")).catch((error) => {
       turnRunning = false;
       emit({ type: "error", message: error.message || String(error) });
+    });
+  } else if (message.type === "steer") {
+    steer(String(message.text || "")).catch((error) => {
+      emit({ type: "steering_error", message: error.message || String(error) });
     });
   } else if (message.type === "permission") {
     answerPermission(message);

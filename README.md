@@ -95,6 +95,8 @@ opening Ask again creates an independent conversation.
 ## Controls
 
 - `Return`: submit
+- While Codex is working, type a correction and press `Return` to steer the
+  active turn. Ask enables this only when the ACP agent advertises steering.
 - `Shift+Return`: insert a newline
 - `Ctrl+W`: delete the word before the caret; `Ctrl+E`: jump to the end of the prompt
 - `Escape`: close and discard the session (overlay only — a pinned window closes
