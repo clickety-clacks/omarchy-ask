@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "clickety-clacks.ask",
   "name": "Ask",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "author": "Clickety Clacks",
   "license": "MIT",
   "description": "A transient conversation with the default local coding agent.",
