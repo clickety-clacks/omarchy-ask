@@ -15,6 +15,11 @@ Item {
   property bool layoutReady: false
   property bool waiting: false
   property bool bridgeReady: false
+  property bool steeringSupported: false
+  property bool steeringPending: false
+  property bool composerTailPinned: false
+  property bool resultsRevealPending: false
+  property bool outsideDismissArmed: false
   property bool sessionLost: false
   property bool pinned: false
   property string statusText: ""
@@ -98,6 +103,8 @@ Item {
   readonly property string conversationFont: "Noto Serif"
   readonly property int agentSize: Math.round(Style.font.body * 1.15 * root.fontScale)
   readonly property int humanSize: Math.round(Style.font.body * 2.36 * root.fontScale)
+  readonly property bool composerPinsTail: root.waiting && root.steeringSupported
+    && root.composerTailPinned && prompt.activeFocus && prompt.text.length > 0
 
   function humanSizeFor(text) {
     // Keep short prompts display-sized, but react quickly once they begin to
@@ -149,11 +156,14 @@ Item {
     card.opacity = 0
     veil.opacity = 0
     opened = true
+    noteKeyboardActivity()
     entranceTimer.restart()
     agent.running = true
   }
 
   function close() {
+    outsideDismissTimer.stop()
+    outsideDismissArmed = false
     closeFilePreview()
     agent.running = false
     keyboardVelocityY = 0
@@ -169,6 +179,8 @@ Item {
     pinned = false
     waiting = false
     bridgeReady = false
+    steeringSupported = false
+    steeringPending = false
     sessionLost = false
     queuedPrompt = ""
     clearPermissions()
@@ -181,6 +193,22 @@ Item {
     prompt.text = ""
     messages.clear()
     closed()
+  }
+
+  function noteKeyboardActivity() {
+    root.outsideDismissArmed = false
+    outsideDismissTimer.restart()
+  }
+
+  function dismissFromOutside() {
+    if (root.outsideDismissArmed) root.close()
+  }
+
+  Timer {
+    id: outsideDismissTimer
+    interval: 750
+    repeat: false
+    onTriggered: root.outsideDismissArmed = true
   }
 
   function toggle() { opened ? close() : open("{}") }
@@ -206,6 +234,60 @@ Item {
     }
     var overflow = surface.contentHeight - surface.height
     surface.contentY = overflow > 0 ? overflow : 0
+  }
+
+  function pinComposerToEnd() {
+    if (!root.waiting || !root.steeringSupported
+        || !prompt.activeFocus || prompt.text.length === 0) return
+    // While a follow-up is being composed, the editor owns the viewport.
+    // Cancel every inertial/anchor owner so streamed output cannot leave the
+    // caret below the fold or immediately pull the surface away again.
+    anchorActive = false
+    anchorScroll.stop()
+    horizontalScroll.stop()
+    verticalScroll.stop()
+    keyboardVelocityY = 0
+    keyboardCoast.stop()
+    trackpadCoast.stop()
+    surface.cancelFlick()
+    Qt.callLater(function() {
+      if (!root.composerPinsTail) return
+      surface.contentY = Math.max(0, surface.contentHeight - surface.height)
+    })
+  }
+
+  function armIncomingResultsReveal() {
+    if (!prompt.activeFocus || card.height < card.maxHeight - 1
+        || !root.isAtEnd()) return
+    root.resultsRevealPending = true
+  }
+
+  function revealIncomingResults() {
+    if (!root.resultsRevealPending) {
+      if (!prompt.activeFocus || !root.isAtEnd()) return
+      root.resultsRevealPending = true
+    }
+    root.keepIncomingResultsRevealed()
+  }
+
+  function keepIncomingResultsRevealed() {
+    if (!root.resultsRevealPending || card.height < card.maxHeight - 1) return
+    root.anchorActive = false
+    anchorScroll.stop()
+    verticalScroll.stop()
+    surface.contentY = Math.max(0, surface.contentHeight - surface.height)
+    resultsRevealSettle.restart()
+  }
+
+  Timer {
+    id: resultsRevealSettle
+    interval: 80
+    repeat: false
+    onTriggered: {
+      if (root.resultsRevealPending && card.height >= card.maxHeight - 1)
+        surface.contentY = Math.max(0, surface.contentHeight - surface.height)
+      root.resultsRevealPending = false
+    }
   }
 
   function isAtEnd() {
@@ -366,7 +448,9 @@ Item {
   // which is exactly the case being guarded against.
   property real menuMouseX: -1
   property real menuMouseY: -1
-  readonly property bool menuOpen: menuSearch.hasResults && !root.waiting
+  // Search is a peer of the agent session, not a phase of it. In particular,
+  // a steerable composer must keep offering matches while output streams.
+  readonly property bool menuOpen: menuSearch.hasResults
   readonly property bool menuSelected: root.menuOpen && root.menuIndex >= 0
 
   function menuMove(delta) {
@@ -815,13 +899,18 @@ Item {
 
   MenuSearch {
     id: menuSearch
-    query: root.waiting ? "" : root.searchMode + prompt.text
+    query: root.searchMode + prompt.text
     appLibrary: root.appLibrary
     debounceMs: root.searchDebounceMs
     fileMode: root.fileBrowserOpen && root.fileBrowserMode === "files"
     repoMode: root.fileBrowserOpen && root.fileBrowserMode === "repos"
     fileQueryOverride: root.fileBrowserQuery
-    onQueryChanged: { root.menuIndex = -1; root.menuMouseArmed = false }
+    onQueryChanged: {
+      root.armIncomingResultsReveal()
+      root.menuIndex = -1
+      root.menuMouseArmed = false
+    }
+    onRowsChanged: root.revealIncomingResults()
     onBrowseRequested: function(mode, query) { root.enterSearchMode(mode, query) }
     onPathActionRequested: function(path, repository, verb) {
       root.openPathAction(path, repository, verb)
@@ -858,11 +947,20 @@ Item {
   // The composer and the transcript therefore route keys through here, so the
   // conversation scrolls wherever the caret happens to be. Returns true when
   // the key was consumed.
-  // requireModifier is set by the composer: while typing, bare arrows have to
-  // keep moving the caret, so only the Ctrl and Page forms scroll from there.
-  // The transcript, where nothing is being typed, takes the bare arrows too.
+  // In the composer, vertical arrows belong to results/the viewport while
+  // Left/Right remain caret navigation. Outside it, horizontal arrows may
+  // scroll wide transcript content too.
   function handleScrollKey(event, requireModifier) {
     var ctrl = (event.modifiers & Qt.ControlModifier) !== 0
+    var verticalKey = event.key === Qt.Key_Up || event.key === Qt.Key_Down
+      || event.key === Qt.Key_PageUp || event.key === Qt.Key_PageDown
+      || (ctrl && (event.key === Qt.Key_J || event.key === Qt.Key_K
+        || event.key === Qt.Key_U || event.key === Qt.Key_D))
+    if (verticalKey) {
+      root.composerTailPinned = false
+      root.resultsRevealPending = false
+      resultsRevealSettle.stop()
+    }
     if (root.menuOpen) {
       if (ctrl && event.key === Qt.Key_K) { menuScrollKeyImpulse(-1, false); return true }
       if (ctrl && event.key === Qt.Key_J) { menuScrollKeyImpulse(1, false); return true }
@@ -879,9 +977,9 @@ Item {
     if (ctrl && event.key === Qt.Key_L) { scrollKeyImpulse(1, 0, false); return true }
     if (event.key === Qt.Key_PageUp || (ctrl && event.key === Qt.Key_U)) { scrollKeyImpulse(0, -1, true); return true }
     if (event.key === Qt.Key_PageDown || (ctrl && event.key === Qt.Key_D)) { scrollKeyImpulse(0, 1, true); return true }
-    if (requireModifier) return false
     if (event.key === Qt.Key_Up) { scrollKeyImpulse(0, -1, false); return true }
     if (event.key === Qt.Key_Down) { scrollKeyImpulse(0, 1, false); return true }
+    if (requireModifier) return false
     if (event.key === Qt.Key_Left) { scrollKeyImpulse(-1, 0, false); return true }
     if (event.key === Qt.Key_Right) { scrollKeyImpulse(1, 0, false); return true }
     return false
@@ -926,7 +1024,20 @@ Item {
 
   function submit() {
     var text = prompt.text.trim()
-    if (text === "" || waiting || sessionLost) return
+    if (text === "" || sessionLost) return
+    if (waiting) {
+      if (!steeringSupported || steeringPending || !bridgeReady || !agent.running) return
+      steeringPending = true
+      statusText = "Steering…"
+      prompt.text = ""
+      messages.append({ role: "You", body: text })
+      activeReply = messages.count
+      activeReplyMessageId = ""
+      messages.append({ role: "Claude", body: "" })
+      agent.write(JSON.stringify({ type: "steer", text: text }) + "\n")
+      Qt.callLater(root.scrollToEnd)
+      return
+    }
     // Someone who scrolled up to read history keeps their position; only a
     // reader already at the tail gets pulled to the new prompt.
     var followTail = isAtEnd()
@@ -964,7 +1075,8 @@ Item {
 
   function appendReply(text, messageId) {
     if (activeReply < 0 || activeReply >= messages.count || text === "") return
-    var followTail = isAtEnd()
+    var pinTail = root.composerPinsTail
+    var followTail = pinTail || isAtEnd()
     var nextMessageId = String(messageId || "")
     if (nextMessageId !== "" && activeReplyMessageId !== "" && nextMessageId !== activeReplyMessageId) {
       activeReply = messages.count
@@ -972,7 +1084,8 @@ Item {
     }
     if (nextMessageId !== "") activeReplyMessageId = nextMessageId
     messages.setProperty(activeReply, "body", (messages.get(activeReply).body || "") + text)
-    if (followTail) Qt.callLater(root.scrollToEnd)
+    if (pinTail) root.pinComposerToEnd()
+    else if (followTail) Qt.callLater(root.scrollToEnd)
   }
 
   function clearPermissions() {
@@ -1010,6 +1123,7 @@ Item {
       var event = JSON.parse(line)
       if (event.type === "ready") {
         bridgeReady = true
+        steeringSupported = event.steeringSupported === true
         permissionMode = event.permissionMode === "yolo" ? "yolo" : "permission"
         statusText = queuedPrompt === "" ? "" : "Thinking…"
         sendQueuedPrompt()
@@ -1018,10 +1132,19 @@ Item {
         statusText = "Replying…"
       } else if (event.type === "done") {
         waiting = false
+        steeringPending = false
         statusText = ""
         activeReply = -1
         activeReplyMessageId = ""
         clearPermissions()
+        Qt.callLater(function() { prompt.forceActiveFocus() })
+      } else if (event.type === "steered") {
+        steeringPending = false
+        statusText = "Thinking…"
+        Qt.callLater(function() { prompt.forceActiveFocus() })
+      } else if (event.type === "steering_error") {
+        steeringPending = false
+        statusText = String(event.message || "Could not steer the active turn")
         Qt.callLater(function() { prompt.forceActiveFocus() })
       } else if (event.type === "status") {
         statusText = String(event.text || "Working…")
@@ -1043,6 +1166,7 @@ Item {
       } else if (event.type === "error") {
         clearPermissions()
         waiting = false
+        steeringPending = false
         activeReply = -1
         activeReplyMessageId = ""
         statusText = String(event.message || "Agent error")
@@ -1052,6 +1176,7 @@ Item {
         bridgeReady = false
         sessionLost = true
         waiting = false
+        steeringPending = false
         activeReply = -1
         activeReplyMessageId = ""
         statusText = String(event.message || "Session lost") + " · close to restart"
@@ -1163,7 +1288,7 @@ Item {
       opacity: 0
     }
     NumberAnimation { id: veilFade; target: veil; property: "opacity"; from: 0; to: 1; duration: 150; easing.type: Easing.OutQuad }
-    MouseArea { anchors.fill: parent; onClicked: root.close() }
+    MouseArea { anchors.fill: parent; onClicked: root.dismissFromOutside() }
 
     BorderSurface {
       id: card
@@ -1192,6 +1317,7 @@ Item {
         enabled: root.layoutReady
         NumberAnimation { duration: 280; easing.type: Easing.OutCubic }
       }
+      onHeightChanged: root.keepIncomingResultsRevealed()
       MouseArea { anchors.fill: parent; onClicked: prompt.forceActiveFocus() }
 
       Flickable {
@@ -1201,6 +1327,7 @@ Item {
         clip: true
         contentWidth: width
         contentHeight: stack.height + root.tailSpace
+        onContentHeightChanged: root.keepIncomingResultsRevealed()
         interactive: contentHeight > height
         flickableDirection: Flickable.VerticalFlick
         boundsBehavior: Flickable.StopAtBounds
@@ -1452,7 +1579,7 @@ Item {
               text: root.statusText
               color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.42)
               font.family: Style.font.family
-              font.pixelSize: Style.font.caption
+              font.pixelSize: root.agentSize
               elide: Text.ElideRight
             }
           }
@@ -1460,7 +1587,7 @@ Item {
           Item {
             id: composer
             width: stack.width
-            visible: !root.waiting
+            visible: !root.waiting || root.steeringSupported
             height: visible ? Math.max(Style.space(54), prompt.contentHeight + Style.space(6)) : 0
 
             // Measure wrapping at the full display size. This gives the font
@@ -1498,20 +1625,28 @@ Item {
               font.pixelSize: responsiveFontSize
               font.italic: true
               wrapMode: TextEdit.Wrap
-              enabled: !root.waiting
+              enabled: !root.waiting || (root.steeringSupported && !root.steeringPending)
               background: null
-              opacity: root.waiting ? 0.45 : 1
-              onContentHeightChanged: if (activeFocus) Qt.callLater(root.scrollToEnd)
+              opacity: root.steeringPending ? 0.45 : 1
+              onContentHeightChanged: if (activeFocus) {
+                if (root.composerPinsTail) root.pinComposerToEnd()
+                else Qt.callLater(root.scrollToEnd)
+              }
               onTextChanged: {
-                if (root.fileBrowserOpen) return
-                if (root.searchMode === "" && text.length > 0
+                if (!root.fileBrowserOpen && root.searchMode === "" && text.length > 0
                     && "@^%".indexOf(text.charAt(0)) >= 0) {
                   root.searchMode = text.charAt(0)
                   text = text.slice(1)
                   cursorPosition = length
                 }
+                if (root.waiting && root.steeringSupported && activeFocus
+                    && text.length > 0) {
+                  root.composerTailPinned = true
+                  root.pinComposerToEnd()
+                }
               }
               Keys.onPressed: function(event) {
+                root.noteKeyboardActivity()
                 if (event.key === Qt.Key_Backspace && root.searchMode !== ""
                     && text.length === 0) {
                   root.searchMode = ""

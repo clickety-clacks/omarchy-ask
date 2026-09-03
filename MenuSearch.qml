@@ -317,21 +317,31 @@ Item {
   // on, and holding an empty result open for the debounce would just look
   // broken. Everything else waits for the pause.
   onQueryChanged: {
+    searchDebounce.stop()
+    // Invalidate every in-flight generation immediately. Nothing new is sent
+    // until typing has paused, so late results cannot jitter the current rows.
+    root.mathRequestId++
+    root.fileRequestId++
+    root.windowRequestId++
+    root.mathRow = null
+    root.fileRows = []
+    root.fileMatchCount = 0
+    root.fileMatchCapped = false
+    root.fileMatchComplete = true
+    root.repoRows = []
+    root.repoMatchCount = 0
+    root.repoMatchCapped = false
+    root.repoMatchComplete = true
+    root.windowRows = []
+    root.rows = []
     if (String(root.query || "").trim() === "") {
-      searchDebounce.stop()
-      root.mathRow = null
-      root.fileRows = []
-      root.fileMatchCount = 0
-      root.fileMatchCapped = false
-      root.fileMatchComplete = true
-      root.repoRows = []
-      root.repoMatchCount = 0
-      root.repoMatchCapped = false
-      root.repoMatchComplete = true
-      root.windowRows = []
-      root.rows = []
       return
     }
+    searchDebounce.restart()
+  }
+
+  function runSettledSearch() {
+    if (String(root.query || "").trim() === "") return
     root.mathRequestId++
     if (mathProc.running) mathProc.write(JSON.stringify({
       id: root.mathRequestId,
@@ -339,7 +349,7 @@ Item {
     }) + "\n")
     root.requestFiles()
     root.requestWindows()
-    searchDebounce.restart()
+    root.refreshRows()
   }
 
   onFileQueryOverrideChanged: if (root.fileMode || root.repoMode) root.requestFiles()
@@ -428,8 +438,6 @@ Item {
     ]
     running: true
     stdinEnabled: true
-    onStarted: if (String(root.query || "").trim() !== "")
-      write(JSON.stringify({ id: root.mathRequestId, query: root.query }) + "\n")
     stdout: SplitParser { onRead: function(line) { root.acceptMath(line) } }
   }
 
@@ -441,7 +449,6 @@ Item {
     ]
     running: true
     stdinEnabled: true
-    onStarted: root.requestFiles()
     stdout: SplitParser { onRead: function(line) { root.acceptFiles(line) } }
   }
 
@@ -453,7 +460,6 @@ Item {
     ]
     running: true
     stdinEnabled: true
-    onStarted: root.requestWindows()
     stdout: SplitParser { onRead: function(line) { root.acceptWindows(line) } }
   }
 
@@ -461,7 +467,7 @@ Item {
     id: searchDebounce
     interval: root.debounceMs
     repeat: false
-    onTriggered: root.refreshRows()
+    onTriggered: root.runSettledSearch()
   }
 
   // ------------------------------------------------------------ definitions
