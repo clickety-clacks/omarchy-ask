@@ -19,6 +19,7 @@ Item {
   property bool steeringPending: false
   property bool composerTailPinned: false
   property bool resultsRevealPending: false
+  property bool outsideDismissArmed: false
   property bool sessionLost: false
   property bool pinned: false
   property string statusText: ""
@@ -150,30 +151,19 @@ Item {
     return out.join("\n")
   }
 
-  function themedMarkdown(text) {
-    var markdown = root.spacedMarkdown(text)
-    var linkTint = String(root.accent)
-    // QQuickTextEdit has no public linkColor property, and document-level
-    // CSS is discarded by QTextDocument's Markdown importer. Inline HTML in
-    // a link label is retained, however, so tint only the label and leave Qt
-    // responsible for parsing, layout, selection and link activation.
-    return markdown.replace(/(^|[^!\\])\[([^\]\n]+)\](\((?:\\.|[^)\n])+\))/g,
-      function(_match, prefix, label, destination) {
-        return prefix + '[<span style="color:' + linkTint + '">' + label
-          + '</span>]' + destination
-      })
-  }
-
   function open(payloadJson) {
     layoutReady = false
     card.opacity = 0
     veil.opacity = 0
     opened = true
+    noteKeyboardActivity()
     entranceTimer.restart()
     agent.running = true
   }
 
   function close() {
+    outsideDismissTimer.stop()
+    outsideDismissArmed = false
     closeFilePreview()
     agent.running = false
     keyboardVelocityY = 0
@@ -203,6 +193,22 @@ Item {
     prompt.text = ""
     messages.clear()
     closed()
+  }
+
+  function noteKeyboardActivity() {
+    root.outsideDismissArmed = false
+    outsideDismissTimer.restart()
+  }
+
+  function dismissFromOutside() {
+    if (root.outsideDismissArmed) root.close()
+  }
+
+  Timer {
+    id: outsideDismissTimer
+    interval: 750
+    repeat: false
+    onTriggered: root.outsideDismissArmed = true
   }
 
   function toggle() { opened ? close() : open("{}") }
@@ -1282,7 +1288,7 @@ Item {
       opacity: 0
     }
     NumberAnimation { id: veilFade; target: veil; property: "opacity"; from: 0; to: 1; duration: 150; easing.type: Easing.OutQuad }
-    MouseArea { anchors.fill: parent; onClicked: root.close() }
+    MouseArea { anchors.fill: parent; onClicked: root.dismissFromOutside() }
 
     BorderSurface {
       id: card
@@ -1528,7 +1534,7 @@ Item {
                 visible: !turn.human
                 width: parent.width
                 height: contentHeight
-                text: root.themedMarkdown(turn.body)
+                text: root.spacedMarkdown(turn.body)
                 color: root.foreground
                 font.family: Style.font.family
                 font.pixelSize: root.agentSize
@@ -1640,6 +1646,7 @@ Item {
                 }
               }
               Keys.onPressed: function(event) {
+                root.noteKeyboardActivity()
                 if (event.key === Qt.Key_Backspace && root.searchMode !== ""
                     && text.length === 0) {
                   root.searchMode = ""
