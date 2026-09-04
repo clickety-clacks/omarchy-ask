@@ -88,6 +88,14 @@ rm ~/.config/omarchy/ask.json
 
 Claude is the default. Set `ASK_AGENT=codex` in the Omarchy Shell environment to use Codex ACP. Set `ASK_CWD` to choose the agent's working directory; otherwise Ask uses `$HOME`.
 
+Ask historically runs its bridge with `node` from `PATH` and launches the ACP
+adapter installed in `bridge/node_modules`. Deployments can replace both paths
+without proxy processes or shell parsing: `ASK_BRIDGE_COMMAND` is a JSON argv
+prefix for running `bridge.js`, and `ASK_ACP_COMMAND` is the complete JSON argv
+for the adapter. For example, the latter may be
+`["mise","exec","--","codex-acp"]`. `ASK_AGENT` still selects protocol behavior
+and display name; executable selection belongs to the deployment.
+
 Each conversation starts its own ACP bridge and session and reuses them for
 every turn. Pinning retains that exact process and session in a normal window;
 opening Ask again creates an independent conversation.

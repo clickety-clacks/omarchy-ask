@@ -14,12 +14,24 @@ import {
 
 const here = dirname(fileURLToPath(import.meta.url));
 const agentName = process.env.ASK_AGENT === "codex" ? "codex" : "claude";
-const agentBinary = join(
+const bundledAgentBinary = join(
   here,
   "node_modules",
   ".bin",
   agentName === "codex" ? "codex-acp" : "claude-agent-acp",
 );
+function configuredAgentCommand() {
+  const raw = String(process.env.ASK_ACP_COMMAND || "").trim();
+  if (!raw) return [bundledAgentBinary];
+  let command;
+  try { command = JSON.parse(raw); }
+  catch { throw new Error("ASK_ACP_COMMAND must be a JSON array of arguments"); }
+  if (!Array.isArray(command) || command.length === 0
+      || command.some((argument) => typeof argument !== "string" || argument === ""))
+    throw new Error("ASK_ACP_COMMAND must be a non-empty JSON array of non-empty strings");
+  return command;
+}
+const agentCommand = configuredAgentCommand();
 const cwd = process.env.ASK_CWD || process.env.HOME || process.cwd();
 const settingsDir = join(process.env.HOME || process.cwd(), ".config", "omarchy");
 const settingsPath = join(settingsDir, "ask.json");
@@ -105,7 +117,7 @@ async function applyRequestedModel(configOptions) {
   }
 }
 
-const child = spawn(agentBinary, [], {
+const child = spawn(agentCommand[0], agentCommand.slice(1), {
   cwd,
   env: { ...process.env, HUGINN_INTERNAL: "1" },
   stdio: ["pipe", "pipe", "pipe"],

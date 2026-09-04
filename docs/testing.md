@@ -119,6 +119,10 @@ its original global binding still exists and works after dismissal.
 6. Confirm there are now two bridge processes.
 7. Close the fresh overlay. The pinned window and its bridge must remain.
 8. Close the pinned window. Its final bridge process must exit.
+9. Leave a pinned conversation unfocused while its reply completes. Confirm
+   Hyprland receives one urgency event, focus and workspace do not change, and
+   focusing the Ask window clears its attention state. Repeat while Ask is
+   focused and confirm it does not enter the attention list.
 
 Useful observations:
 

@@ -161,6 +161,20 @@ Item {
     agent.running = true
   }
 
+  readonly property var bridgeCommand: {
+    var raw = String(Quickshell.env("ASK_BRIDGE_COMMAND") || "").trim()
+    var prefix = []
+    if (raw !== "") {
+      try { prefix = JSON.parse(raw) } catch (error) { prefix = [] }
+    }
+    // Preserve the historical PATH lookup when no platform command is
+    // supplied. Omarchy deployments can provide any argv prefix explicitly.
+    if (!Array.isArray(prefix) || prefix.length === 0) prefix = ["node"]
+    return ["env", "HUGINN_INTERNAL=1"].concat(prefix).concat([
+      Quickshell.env("HOME") + "/.config/omarchy/plugins/clickety-clacks.ask/bridge/bridge.js"
+    ])
+  }
+
   function close() {
     outsideDismissTimer.stop()
     outsideDismissArmed = false
@@ -1137,6 +1151,11 @@ Item {
         activeReply = -1
         activeReplyMessageId = ""
         clearPermissions()
+        // A pinned conversation can finish while the user is elsewhere. Ask
+        // for compositor attention after the final model update has rendered;
+        // Qt suppresses the request when this window is already active.
+        if (pinned && !pinnedWindow.active)
+          Qt.callLater(function() { if (root.pinned) pinnedWindow.alert(0) })
         Qt.callLater(function() { prompt.forceActiveFocus() })
       } else if (event.type === "steered") {
         steeringPending = false
@@ -1215,15 +1234,15 @@ Item {
 
   Process {
     id: agent
-    command: [
-      "env", "HUGINN_INTERNAL=1",
-      "node", Quickshell.env("HOME") + "/.config/omarchy/plugins/clickety-clacks.ask/bridge/bridge.js"
-    ]
+    command: root.bridgeCommand
     stdinEnabled: true
     onExited: function(code) {
       root.clearPermissions()
       root.bridgeReady = false
       if (!root.opened) return
+      // A fatal bridge event carries the useful launch/session error. Do not
+      // replace it with the generic process-exit fallback a moment later.
+      if (root.sessionLost) return
       root.waiting = false
       root.activeReply = -1
       root.sessionLost = true

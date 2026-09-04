@@ -44,6 +44,9 @@ Omarchy Shell
    ordinary shell `close()` never closes pinned conversations.
 7. Closing cancels unresolved permissions, asks ACP to close the session, sends
    SIGTERM to the agent, and uses SIGKILL only as a short shutdown fallback.
+8. When a turn finishes in an unfocused pinned conversation, its toplevel asks
+   the compositor for attention once. Overlay conversations never request
+   attention and completion never steals focus.
 
 ## Permission invariants
 
