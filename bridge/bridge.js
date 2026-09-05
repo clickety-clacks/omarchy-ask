@@ -8,6 +8,7 @@ import { dirname, join } from "node:path";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolveHarness, resolveExecutable } from "./harness-policy.js";
 import { explainHarnessError, needsNewSession } from "./harness-errors.js";
+import { readClipboard } from "./image-paste.js";
 import {
   ClientSideConnection,
   PROTOCOL_VERSION,
@@ -368,6 +369,15 @@ input.on("line", (line) => {
   } else if (message.type === "steer") {
     steer(String(message.text || "")).catch((error) => {
       emit({ type: "steering_error", message: error.message || String(error) });
+    });
+  } else if (message.type === "read_clipboard") {
+    readClipboard(message.policy).then((result) => {
+      emit({ type: "clipboard", ...result });
+    }).catch((error) => {
+      emit({
+        type: "clipboard_error",
+        message: error.message || "Could not read the clipboard.",
+      });
     });
   } else if (message.type === "permission") {
     answerPermission(message);
