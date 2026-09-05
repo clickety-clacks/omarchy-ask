@@ -18,6 +18,10 @@ Item {
   property bool bridgeReady: false
   property bool steeringSupported: false
   property bool steeringPending: false
+  property bool imagePromptSupported: false
+  property bool imageAttachmentsLocked: false
+  property var imageAttachments: []
+  property int imageAttachmentSequence: 0
   property bool composerTailPinned: false
   property bool resultsRevealPending: false
   property bool outsideDismissArmed: false
@@ -219,6 +223,8 @@ Item {
     bridgeReady = false
     steeringSupported = false
     steeringPending = false
+    imagePromptSupported = false
+    clearImageAttachments()
     sessionLost = false
     queuedPrompt = ""
     clearPermissions()
@@ -231,6 +237,34 @@ Item {
     prompt.text = ""
     messages.clear()
     closed()
+  }
+
+  function addImageAttachments(images) {
+    var next = imageAttachments.slice()
+    for (var i = 0; i < images.length; i++) {
+      var image = images[i] || {}
+      imageAttachmentSequence++
+      next.push({
+        id: imageAttachmentSequence,
+        name: String(image.name || "Pasted image"),
+        mimeType: String(image.mimeType || ""),
+        size: Number(image.size || 0),
+        data: String(image.data || "")
+      })
+    }
+    imageAttachments = next
+  }
+
+  function removeImageAttachment(index) {
+    if (imageAttachmentsLocked || index < 0 || index >= imageAttachments.length) return
+    var next = imageAttachments.slice()
+    next.splice(index, 1)
+    imageAttachments = next
+  }
+
+  function clearImageAttachments() {
+    imageAttachmentsLocked = false
+    imageAttachments = []
   }
 
   function noteKeyboardActivity() {
@@ -1170,6 +1204,7 @@ Item {
       if (event.type === "ready") {
         bridgeReady = true
         steeringSupported = event.steeringSupported === true
+        imagePromptSupported = event.imagePromptSupported === true
         permissionMode = event.permissionMode === "yolo" ? "yolo" : "permission"
         statusText = queuedPrompt === "" ? "" : "Thinking…"
         sendQueuedPrompt()
@@ -1671,6 +1706,69 @@ Item {
               Button {
                 text: "Choose harness…"
                 onClicked: root.harnessSelectorRequested()
+              }
+            }
+          }
+
+          Flow {
+            id: imageAttachmentStrip
+            width: stack.width
+            visible: root.imageAttachments.length > 0
+            height: visible ? childrenRect.height : 0
+            spacing: Style.space(8)
+
+            Repeater {
+              model: root.imageAttachments
+
+              Rectangle {
+                required property var modelData
+                required property int index
+                width: Style.space(82)
+                height: Style.space(66)
+                radius: Style.space(5)
+                color: Qt.rgba(root.foreground.r, root.foreground.g,
+                  root.foreground.b, 0.08)
+                border.width: 1
+                border.color: Qt.rgba(root.foreground.r, root.foreground.g,
+                  root.foreground.b, 0.16)
+                opacity: root.imageAttachmentsLocked ? 0.58 : 1
+                clip: true
+
+                Image {
+                  anchors.fill: parent
+                  anchors.margins: 1
+                  source: "data:" + modelData.mimeType + ";base64," + modelData.data
+                  sourceSize.width: Style.space(164)
+                  sourceSize.height: Style.space(132)
+                  fillMode: Image.PreserveAspectCrop
+                  cache: false
+                }
+
+                Rectangle {
+                  visible: !root.imageAttachmentsLocked
+                  width: Style.space(22)
+                  height: width
+                  radius: width / 2
+                  anchors.top: parent.top
+                  anchors.right: parent.right
+                  anchors.margins: Style.space(4)
+                  color: Qt.rgba(root.background.r, root.background.g,
+                    root.background.b, 0.88)
+
+                  Text {
+                    anchors.centerIn: parent
+                    text: "×"
+                    color: root.foreground
+                    font.family: Style.font.family
+                    font.pixelSize: root.agentSize
+                  }
+
+                  MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.removeImageAttachment(index)
+                  }
+                }
               }
             }
           }
