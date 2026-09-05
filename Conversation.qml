@@ -1710,17 +1710,18 @@ Item {
             }
           }
 
-          Flow {
+          ListView {
             id: imageAttachmentStrip
             width: stack.width
             visible: root.imageAttachments.length > 0
-            height: visible ? childrenRect.height : 0
+            height: visible ? Style.space(66) : 0
             spacing: Style.space(8)
+            orientation: ListView.Horizontal
+            boundsBehavior: Flickable.StopAtBounds
+            clip: true
+            model: root.imageAttachments
 
-            Repeater {
-              model: root.imageAttachments
-
-              Rectangle {
+            delegate: Rectangle {
                 required property var modelData
                 required property int index
                 width: Style.space(82)
@@ -1769,7 +1770,6 @@ Item {
                     onClicked: root.removeImageAttachment(index)
                   }
                 }
-              }
             }
           }
 
