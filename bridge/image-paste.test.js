@@ -88,6 +88,10 @@ test("per-image and aggregate limits report the exceeded boundary", async () => 
     { "/tmp/changed.png": Buffer.concat([png, Buffer.alloc(32)]) });
   changedFile.stat = async () => ({ size: png.length });
   await assert.rejects(decodeClipboardOffer(changedFile, policy), /per-image limit/);
+
+  await assert.rejects(decodeClipboardOffer(offer(
+    ["image/png"], { "image/png": png }), { ...policy, existingBytes: 60 }),
+  /total more than/);
 });
 
 test("declared MIME must match the image bytes", async () => {

@@ -56,10 +56,12 @@ function normalizePolicy(policy) {
   const mimeTypes = normalizeTypes(policy?.mimeTypes);
   const maxImageBytes = Number(policy?.maxImageBytes);
   const maxTotalBytes = Number(policy?.maxTotalBytes);
+  const existingBytes = Number(policy?.existingBytes || 0);
   if (mimeTypes.length === 0 || !Number.isFinite(maxImageBytes) || maxImageBytes <= 0
-      || !Number.isFinite(maxTotalBytes) || maxTotalBytes < maxImageBytes)
+      || !Number.isFinite(maxTotalBytes) || maxTotalBytes < maxImageBytes
+      || !Number.isFinite(existingBytes) || existingBytes < 0)
     throw new TypeError("Image paste policy is incomplete");
-  return { mimeTypes, maxImageBytes, maxTotalBytes };
+  return { mimeTypes, maxImageBytes, maxTotalBytes, existingBytes };
 }
 
 function supportedFormats(policy) {
@@ -119,7 +121,7 @@ export async function decodeClipboardOffer(io, rawPolicy) {
       if (imagePaths.length !== paths.length)
         throw new ImagePasteError("Copy only image files before pasting them into Ask.");
       const images = [];
-      let total = 0;
+      let total = policy.existingBytes;
       for (const path of imagePaths) {
         const info = await io.stat(path);
         const name = basename(path) || "Pasted image";
@@ -145,7 +147,7 @@ export async function decodeClipboardOffer(io, rawPolicy) {
           `Clipboard image exceeds the ${formatMiB(policy.maxImageBytes)} per-image limit.`);
       throw error;
     }
-    checkSize("Clipboard image", asBuffer(data).length, 0, policy);
+    checkSize("Clipboard image", asBuffer(data).length, policy.existingBytes, policy);
     return {
       kind: "images",
       source: "data",
