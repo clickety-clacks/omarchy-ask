@@ -372,10 +372,11 @@ input.on("line", (line) => {
     });
   } else if (message.type === "read_clipboard") {
     readClipboard(message.policy).then((result) => {
-      emit({ type: "clipboard", ...result });
+      emit({ type: "clipboard", requestId: message.requestId, ...result });
     }).catch((error) => {
       emit({
         type: "clipboard_error",
+        requestId: message.requestId,
         message: error.message || "Could not read the clipboard.",
       });
     });

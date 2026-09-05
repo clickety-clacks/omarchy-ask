@@ -22,6 +22,14 @@ Item {
   property bool imageAttachmentsLocked: false
   property var imageAttachments: []
   property int imageAttachmentSequence: 0
+  property int clipboardSequence: 0
+  property int pendingClipboardId: -1
+  property bool clipboardRequestedWhileWaiting: false
+  readonly property var imagePastePolicy: ({
+    mimeTypes: ["image/png", "image/jpeg", "image/gif", "image/webp"],
+    maxImageBytes: 5 * 1024 * 1024,
+    maxTotalBytes: 20 * 1024 * 1024
+  })
   property bool composerTailPinned: false
   property bool resultsRevealPending: false
   property bool outsideDismissArmed: false
@@ -204,6 +212,9 @@ Item {
   }
 
   function close() {
+    // Invalidate before stopping the bridge: its last clipboard response may
+    // already be queued. Pinning never changes this conversation's ownership.
+    pendingClipboardId = -1
     outsideDismissTimer.stop()
     outsideDismissArmed = false
     closeFilePreview()
@@ -253,6 +264,53 @@ Item {
       })
     }
     imageAttachments = next
+    searchMode = ""
+    menuIndex = -1
+  }
+
+  function pasteClipboard() {
+    if (!opened || pendingClipboardId !== -1) return
+    if (!agent.running) {
+      statusText = "Start an agent session before pasting an image."
+      prompt.paste()
+      return
+    }
+    pendingClipboardId = ++clipboardSequence
+    clipboardRequestedWhileWaiting = waiting
+    agent.write(JSON.stringify({
+      type: "read_clipboard", requestId: pendingClipboardId,
+      policy: imagePastePolicy
+    }) + "\n")
+  }
+
+  function receiveClipboard(event) {
+    if (!opened || event.requestId !== pendingClipboardId) return
+    pendingClipboardId = -1
+    if (event.type === "clipboard_error") {
+      statusText = String(event.message || "Could not read the clipboard.")
+    } else if (event.kind === "text") {
+      // Use the current selection, as normal text paste does. Clipboard reads
+      // never restore an old snapshot over text typed while the read ran.
+      var start = prompt.selectionStart
+      prompt.remove(start, prompt.selectionEnd)
+      prompt.insert(start, String(event.text || ""))
+    } else if (event.kind === "images") {
+      if (waiting || clipboardRequestedWhileWaiting) {
+        statusText = "Wait for the reply to finish before pasting another image."
+        return
+      }
+      var images = event.images || []
+      var total = 0
+      for (var i = 0; i < imageAttachments.length; i++) total += imageAttachments[i].size
+      for (var j = 0; j < images.length; j++) total += images[j].size
+      // Account at attachment time, where the draft and read result meet.
+      if (total > imagePastePolicy.maxTotalBytes) {
+        statusText = "These images total more than 20 MiB."
+        return
+      }
+      addImageAttachments(images)
+      statusText = ""
+    }
   }
 
   function removeImageAttachment(index) {
@@ -522,7 +580,7 @@ Item {
   property real menuMouseY: -1
   // Search is a peer of the agent session, not a phase of it. In particular,
   // a steerable composer must keep offering matches while output streams.
-  readonly property bool menuOpen: menuSearch.hasResults
+  readonly property bool menuOpen: imageAttachments.length === 0 && menuSearch.hasResults
   readonly property bool menuSelected: root.menuOpen && root.menuIndex >= 0
 
   function menuMove(delta) {
@@ -971,7 +1029,7 @@ Item {
 
   MenuSearch {
     id: menuSearch
-    query: root.searchMode + prompt.text
+    query: root.imageAttachments.length > 0 ? "" : root.searchMode + prompt.text
     appLibrary: root.appLibrary
     debounceMs: root.searchDebounceMs
     fileMode: root.fileBrowserOpen && root.fileBrowserMode === "files"
@@ -1197,11 +1255,14 @@ Item {
   }
 
   function handleAgentLine(rawLine) {
+    if (!opened) return
     var line = String(rawLine || "").trim()
     if (line === "") return
     try {
       var event = JSON.parse(line)
-      if (event.type === "ready") {
+      if (event.type === "clipboard" || event.type === "clipboard_error") {
+        receiveClipboard(event)
+      } else if (event.type === "ready") {
         bridgeReady = true
         steeringSupported = event.steeringSupported === true
         imagePromptSupported = event.imagePromptSupported === true
@@ -1822,7 +1883,8 @@ Item {
                 else Qt.callLater(root.scrollToEnd)
               }
               onTextChanged: {
-                if (!root.fileBrowserOpen && root.searchMode === "" && text.length > 0
+                if (root.imageAttachments.length === 0
+                    && !root.fileBrowserOpen && root.searchMode === "" && text.length > 0
                     && "@^%".indexOf(text.charAt(0)) >= 0) {
                   root.searchMode = text.charAt(0)
                   text = text.slice(1)
@@ -1836,6 +1898,11 @@ Item {
               }
               Keys.onPressed: function(event) {
                 root.noteKeyboardActivity()
+                if (event.key === Qt.Key_V && (event.modifiers & Qt.ControlModifier)) {
+                  root.pasteClipboard()
+                  event.accepted = true
+                  return
+                }
                 if (event.key === Qt.Key_Backspace && root.searchMode !== ""
                     && text.length === 0) {
                   root.searchMode = ""
