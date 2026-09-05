@@ -167,6 +167,21 @@ opening Ask again creates an independent conversation.
 Pinned conversations remain open with their own agent sessions. Invoking the
 Ask shortcut again opens a fresh overlay instead of dismissing pinned windows.
 
+Paste image data or copied image files with `Ctrl+V`. Ask shows removable
+thumbnails and sends them with your text. PNG, JPEG, GIF, and WebP are accepted,
+up to 5 MiB per image and 20 MiB per draft, without resizing or conversion.
+Images leave `@`, `^`, or `%` search mode while keeping the query text, and
+suppress launcher actions until removed. Ordinary text paste remains available.
+
+Submitted images stay visible and locked during the answer. Wait for the reply
+before pasting another image; supported text steering remains available.
+Success clears the submitted images. On failure, Ask restores the original
+draft if the composer is empty. If newer text exists, the failed original has
+its own labeled thumbnails and **Retry original** action. Return sends only the
+current composer draft. Retry never overwrites newer text or runs automatically.
+Closing the conversation clears Ask's copies; source files, the system clipboard,
+and harness-owned logs are not erased.
+
 Text size applies to every conversation, in the overlay and in pinned windows
 alike, and is remembered across restarts.
 

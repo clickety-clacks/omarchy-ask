@@ -165,9 +165,9 @@ export async function decodeClipboardOffer(io, rawPolicy) {
   throw new ImagePasteError("The clipboard does not contain text or a supported image.");
 }
 
-async function wlPaste(args, maxBuffer, encoding = "buffer") {
+async function wlPaste(args, maxBuffer, encoding = "buffer", signal) {
   try {
-    const result = await execFileAsync("wl-paste", args, { encoding, maxBuffer });
+    const result = await execFileAsync("wl-paste", args, { encoding, maxBuffer, signal });
     return result.stdout;
   } catch (error) {
     if (error?.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") throw error;
@@ -175,17 +175,17 @@ async function wlPaste(args, maxBuffer, encoding = "buffer") {
   }
 }
 
-export async function readClipboard(rawPolicy) {
+export async function readClipboard(rawPolicy, { signal } = {}) {
   const policy = normalizePolicy(rawPolicy);
   return decodeClipboardOffer({
     async listTypes() {
-      const output = await wlPaste(["--list-types"], 64 * 1024, "utf8");
+      const output = await wlPaste(["--list-types"], 64 * 1024, "utf8", signal);
       return String(output).split(/\r?\n/);
     },
     readType(type, maxBytes) {
-      return wlPaste(["--no-newline", "--type", type], maxBytes + 1);
+      return wlPaste(["--no-newline", "--type", type], maxBytes + 1, "buffer", signal);
     },
-    readFile,
+    readFile: (path) => readFile(path, { signal }),
     stat,
   }, policy);
 }

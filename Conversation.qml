@@ -21,6 +21,12 @@ Item {
   property bool imagePromptSupported: false
   property bool imageAttachmentsLocked: false
   property var imageAttachments: []
+  // A submitted image prompt owns its text and bytes independently of the
+  // editable composer. Failed originals never become the next draft implicitly.
+  property var activeImageDraft: null
+  property var failedImageDrafts: []
+  property int imageDraftSequence: 0
+  property var queuedImages: []
   property int imageAttachmentSequence: 0
   property int clipboardSequence: 0
   property int pendingClipboardId: -1
@@ -236,6 +242,9 @@ Item {
     steeringPending = false
     imagePromptSupported = false
     clearImageAttachments()
+    activeImageDraft = null
+    failedImageDrafts = []
+    queuedImages = []
     sessionLost = false
     queuedPrompt = ""
     clearPermissions()
@@ -289,6 +298,7 @@ Item {
     if (event.type === "clipboard_error") {
       statusText = String(event.message || "Could not read the clipboard.")
     } else if (event.kind === "text") {
+      if (waiting && !steeringSupported) return
       // Use the current selection, as normal text paste does. Clipboard reads
       // never restore an old snapshot over text typed while the read ran.
       var start = prompt.selectionStart
@@ -323,6 +333,64 @@ Item {
   function clearImageAttachments() {
     imageAttachmentsLocked = false
     imageAttachments = []
+  }
+
+  function finishImagePrompt(success) {
+    queuedPrompt = ""
+    queuedImages = []
+    var original = activeImageDraft
+    activeImageDraft = null
+    if (!original || success) return
+    if (prompt.text === "" && imageAttachments.length === 0) {
+      imageAttachments = original.images
+      prompt.text = original.text
+      prompt.cursorPosition = prompt.length
+    } else {
+      failedImageDrafts = failedImageDrafts.concat([original])
+    }
+  }
+
+  function retryOriginal(id) {
+    if (waiting || sessionLost || !bridgeReady || !agent.running) return
+    for (var i = 0; i < failedImageDrafts.length; i++) {
+      var original = failedImageDrafts[i]
+      if (original.id !== id) continue
+      var next = failedImageDrafts.slice()
+      next.splice(i, 1)
+      failedImageDrafts = next
+      activeImageDraft = original
+      startPrompt(original.text, original.images, false)
+      return
+    }
+  }
+
+  readonly property var imageGroups: {
+    var groups = failedImageDrafts.map(function(original) {
+      return { kind: "failed", draft: original, images: original.images, locked: false }
+    })
+    if (activeImageDraft)
+      groups.push({ kind: "submitted", draft: activeImageDraft,
+        images: activeImageDraft.images, locked: true })
+    if (imageAttachments.length > 0)
+      groups.push({ kind: "draft", draft: null, images: imageAttachments, locked: false })
+    return groups
+  }
+  readonly property bool hasImageAttachments: imageGroups.some(function(group) {
+    return group.images.length > 0
+  })
+
+  function removeGroupImage(group, index) {
+    if (group.locked) return
+    if (group.kind === "draft") { removeImageAttachment(index); return }
+    var next = failedImageDrafts.slice()
+    for (var i = 0; i < next.length; i++) {
+      if (next[i].id !== group.draft.id) continue
+      var images = next[i].images.slice()
+      images.splice(index, 1)
+      next[i] = { id: next[i].id, text: next[i].text, images: images }
+      failedImageDrafts = next
+      return
+    }
   }
 
   function noteKeyboardActivity() {
@@ -580,7 +648,7 @@ Item {
   property real menuMouseY: -1
   // Search is a peer of the agent session, not a phase of it. In particular,
   // a steerable composer must keep offering matches while output streams.
-  readonly property bool menuOpen: imageAttachments.length === 0 && menuSearch.hasResults
+  readonly property bool menuOpen: !hasImageAttachments && menuSearch.hasResults
   readonly property bool menuSelected: root.menuOpen && root.menuIndex >= 0
 
   function menuMove(delta) {
@@ -1029,7 +1097,7 @@ Item {
 
   MenuSearch {
     id: menuSearch
-    query: root.imageAttachments.length > 0 ? "" : root.searchMode + prompt.text
+    query: root.hasImageAttachments ? "" : root.searchMode + prompt.text
     appLibrary: root.appLibrary
     debounceMs: root.searchDebounceMs
     fileMode: root.fileBrowserOpen && root.fileBrowserMode === "files"
@@ -1146,6 +1214,11 @@ Item {
     Shortcut { sequence: "Ctrl+-"; onActivated: conversation.stepFontScale(-0.1) }
     Shortcut { sequence: "Ctrl+0"; enabled: !conversation.menuOpen && !conversation.fileBrowserOpen; onActivated: conversation.resetFontScale() }
     Shortcut { sequence: "Ctrl+P"; onActivated: conversation.pinConversation() }
+    Shortcut {
+      sequence: "Ctrl+V"
+      enabled: conversation.waiting && !conversation.steeringSupported
+      onActivated: conversation.pasteClipboard()
+    }
     Shortcut { sequence: "Ctrl+,"; onActivated: conversation.motionTunerRequested() }
     Shortcut { sequence: "Meta+,"; onActivated: conversation.harnessSelectorRequested() }
     Shortcut { sequence: "Ctrl+1"; enabled: conversation.menuOpen || conversation.fileBrowserOpen; onActivated: conversation.selectVisibleSlot(0) }
@@ -1162,8 +1235,9 @@ Item {
 
   function submit() {
     var text = prompt.text.trim()
-    if (text === "" || sessionLost) return
+    if (sessionLost) return
     if (waiting) {
+      if (text === "") return
       if (!steeringSupported || steeringPending || !bridgeReady || !agent.running) return
       steeringPending = true
       statusText = "Steering…"
@@ -1176,14 +1250,25 @@ Item {
       Qt.callLater(root.scrollToEnd)
       return
     }
+    var images = imageAttachments.slice()
+    if (text === "" && images.length === 0) return
+    if (images.length > 0) {
+      activeImageDraft = { id: ++imageDraftSequence, text: prompt.text, images: images }
+      imageAttachments = []
+    }
+    startPrompt(text, images, true)
+  }
+
+  function startPrompt(text, images, clearComposer) {
     // Someone who scrolled up to read history keeps their position; only a
     // reader already at the tail gets pulled to the new prompt.
     var followTail = isAtEnd()
     waiting = true
     statusText = "Thinking…"
     queuedPrompt = text
-    prompt.text = ""
-    messages.append({ role: "You", body: text })
+    queuedImages = images
+    if (clearComposer) prompt.text = ""
+    messages.append({ role: "You", body: text || "Image attached" })
     var promptIndex = messages.count - 1
     activeReply = messages.count
     activeReplyMessageId = ""
@@ -1194,12 +1279,14 @@ Item {
   }
 
   function sendQueuedPrompt() {
-    if (queuedPrompt === "" || !agent.running || !bridgeReady) return
+    if ((queuedPrompt === "" && queuedImages.length === 0) || !agent.running || !bridgeReady) return
     agent.write(JSON.stringify({
       type: "prompt",
-      text: queuedPrompt
+      text: queuedPrompt,
+      images: queuedImages
     }) + "\n")
     queuedPrompt = ""
+    queuedImages = []
   }
 
   function setPermissionMode(mode) {
@@ -1273,9 +1360,13 @@ Item {
         appendReply(String(event.text || ""), String(event.messageId || ""))
         statusText = "Replying…"
       } else if (event.type === "done") {
+        var incompleteImageReply = activeImageDraft && event.stopReason
+          && event.stopReason !== "end_turn"
+        finishImagePrompt(!incompleteImageReply)
         waiting = false
         steeringPending = false
-        statusText = ""
+        statusText = incompleteImageReply
+          ? "Reply stopped (" + event.stopReason + "). The original draft is retained." : ""
         activeReply = -1
         activeReplyMessageId = ""
         clearPermissions()
@@ -1311,6 +1402,7 @@ Item {
         permissionModePending = false
         statusText = String(event.message || "Could not change permission mode")
       } else if (event.type === "error") {
+        finishImagePrompt(false)
         clearPermissions()
         waiting = false
         steeringPending = false
@@ -1319,6 +1411,7 @@ Item {
         statusText = String(event.message || "Agent error")
         Qt.callLater(function() { prompt.forceActiveFocus() })
       } else if (event.type === "fatal") {
+        finishImagePrompt(false)
         clearPermissions()
         bridgeReady = false
         sessionLost = true
@@ -1336,6 +1429,7 @@ Item {
     sessionRestartRequested()
     sessionLost = false
     queuedPrompt = ""
+    queuedImages = []
     steeringSupported = false
     steeringPending = false
     statusText = "Starting agent…"
@@ -1376,12 +1470,14 @@ Item {
     command: root.bridgeCommand
     stdinEnabled: true
     onExited: function(code) {
+      root.pendingClipboardId = -1
       root.clearPermissions()
       root.bridgeReady = false
       if (!root.opened) return
       // A fatal bridge event carries the useful launch/session error. Do not
       // replace it with the generic process-exit fallback a moment later.
       if (root.sessionLost) return
+      root.finishImagePrompt(false)
       root.waiting = false
       root.activeReply = -1
       root.sessionLost = true
@@ -1771,16 +1867,39 @@ Item {
             }
           }
 
-          ListView {
+          Repeater {
+            model: root.imageGroups
+            delegate: Column {
+              id: imageGroup
+              required property var modelData
+              width: stack.width
+              spacing: Style.space(6)
+              Text {
+                visible: imageGroup.modelData.kind !== "draft"
+                width: parent.width
+                text: (imageGroup.modelData.kind === "failed" ? "Failed original: " : "Submitted: ")
+                  + (imageGroup.modelData.draft ? imageGroup.modelData.draft.text : "")
+                color: root.foreground
+                font.pixelSize: root.agentSize
+                wrapMode: Text.Wrap
+                textFormat: Text.PlainText
+              }
+              Button {
+                visible: imageGroup.modelData.kind === "failed"
+                text: "Retry original"
+                enabled: !root.waiting && !root.sessionLost && root.bridgeReady && agent.running
+                onClicked: root.retryOriginal(imageGroup.modelData.draft.id)
+              }
+              ListView {
             id: imageAttachmentStrip
             width: stack.width
-            visible: root.imageAttachments.length > 0
+            visible: imageGroup.modelData.images.length > 0
             height: visible ? Style.space(66) : 0
             spacing: Style.space(8)
             orientation: ListView.Horizontal
             boundsBehavior: Flickable.StopAtBounds
             clip: true
-            model: root.imageAttachments
+            model: imageGroup.modelData.images
 
             delegate: Rectangle {
                 required property var modelData
@@ -1793,7 +1912,7 @@ Item {
                 border.width: 1
                 border.color: Qt.rgba(root.foreground.r, root.foreground.g,
                   root.foreground.b, 0.16)
-                opacity: root.imageAttachmentsLocked ? 0.58 : 1
+                opacity: imageGroup.modelData.locked ? 0.58 : 1
                 clip: true
 
                 Image {
@@ -1807,7 +1926,7 @@ Item {
                 }
 
                 Rectangle {
-                  visible: !root.imageAttachmentsLocked
+                  visible: !imageGroup.modelData.locked
                   width: Style.space(22)
                   height: width
                   radius: width / 2
@@ -1828,9 +1947,11 @@ Item {
                   MouseArea {
                     anchors.fill: parent
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: root.removeImageAttachment(index)
+                    onClicked: root.removeGroupImage(imageGroup.modelData, index)
                   }
                 }
+            }
+              }
             }
           }
 
@@ -1883,7 +2004,7 @@ Item {
                 else Qt.callLater(root.scrollToEnd)
               }
               onTextChanged: {
-                if (root.imageAttachments.length === 0
+                if (!root.hasImageAttachments
                     && !root.fileBrowserOpen && root.searchMode === "" && text.length > 0
                     && "@^%".indexOf(text.charAt(0)) >= 0) {
                   root.searchMode = text.charAt(0)

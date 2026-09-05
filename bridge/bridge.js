@@ -169,6 +169,7 @@ let turnRunning = false;
 let steeringSupported = false;
 let imagePromptSupported = false;
 let shuttingDown = false;
+let clipboardAbortController = null;
 let childExitResolve;
 const childExited = new Promise((resolve) => { childExitResolve = resolve; });
 
@@ -330,6 +331,8 @@ function allowAllPendingPermissions() {
 async function shutdown() {
   if (shuttingDown) return;
   shuttingDown = true;
+  clipboardAbortController?.abort();
+  clipboardAbortController = null;
   for (const { resolve } of pendingPermissions.values()) {
     resolve({ outcome: { outcome: "cancelled" } });
   }
@@ -371,14 +374,21 @@ input.on("line", (line) => {
       emit({ type: "steering_error", message: error.message || String(error) });
     });
   } else if (message.type === "read_clipboard") {
-    readClipboard(message.policy).then((result) => {
-      emit({ type: "clipboard", requestId: message.requestId, ...result });
+    clipboardAbortController?.abort();
+    const controller = new AbortController();
+    clipboardAbortController = controller;
+    readClipboard(message.policy, { signal: controller.signal }).then((result) => {
+      if (!controller.signal.aborted && !shuttingDown)
+        emit({ type: "clipboard", requestId: message.requestId, ...result });
     }).catch((error) => {
+      if (controller.signal.aborted || shuttingDown) return;
       emit({
         type: "clipboard_error",
         requestId: message.requestId,
         message: error.message || "Could not read the clipboard.",
       });
+    }).finally(() => {
+      if (clipboardAbortController === controller) clipboardAbortController = null;
     });
   } else if (message.type === "permission") {
     answerPermission(message);
