@@ -14,6 +14,7 @@ Item {
   property var shell: null
   property var activeOverlay: null
   property var conversations: []
+  property int conversationSequence: 0
   readonly property bool opened: activeOverlay !== null
     && activeOverlay.opened
     && !activeOverlay.pinned
@@ -37,6 +38,9 @@ Item {
   property var fileEditCommand: []
   property bool useHyprlandShortcutSubmap: false
   property int repoSearchDepth: 6
+  property string selectedAgent: ""
+  property string selectedModel: ""
+  property string selectedReasoningEffort: ""
   readonly property real keyboardPageImpulse: keyboardLineImpulse * (740 / 360)
   property bool settingsLoaded: false
   // Retained so writing the font scale cannot drop the mode the bridge owns.
@@ -163,6 +167,9 @@ Item {
     repoSearchDepth = isFinite(repoDepth)
       ? (repoDepth <= 0 ? 0 : Math.max(1, Math.min(128, Math.round(repoDepth))))
       : 6
+    selectedAgent = String(data.agent || "")
+    selectedModel = selectedAgent ? String(data.model || "") : ""
+    selectedReasoningEffort = selectedAgent ? String(data.reasoningEffort || "") : ""
     settingsLoaded = true
   }
 
@@ -189,7 +196,10 @@ Item {
       fileOpenCommand: fileOpenCommand,
       fileEditCommand: fileEditCommand,
       useHyprlandShortcutSubmap: useHyprlandShortcutSubmap,
-      repoSearchDepth: repoSearchDepth
+      repoSearchDepth: repoSearchDepth,
+      agent: selectedAgent,
+      model: selectedModel,
+      reasoningEffort: selectedReasoningEffort
     }, null, 2) + "\n")
   }
 
@@ -221,6 +231,30 @@ Item {
       root.setKeyboardMotion(nextImpulse, nextDeceleration)
     }
     onResetRequested: root.setKeyboardMotion(335, 608)
+  }
+
+  Loader {
+    id: harnessSelectorLoader
+    source: Qt.resolvedUrl("HarnessSelector.qml")
+  }
+
+  Connections {
+    target: harnessSelectorLoader.item
+    function onApplied(nextAgent, nextModel, nextReasoningEffort) {
+      root.selectedAgent = nextAgent
+      root.selectedModel = nextModel
+      root.selectedReasoningEffort = nextReasoningEffort
+      settingsSaveTimer.restart()
+    }
+  }
+
+  function openHarnessSelector() {
+    var selector = harnessSelectorLoader.item
+    if (!selector) return
+    selector.agent = selectedAgent
+    selector.model = selectedModel
+    selector.reasoningEffort = selectedReasoningEffort
+    selector.open()
   }
 
   PanelWindow {
@@ -293,6 +327,8 @@ Item {
   function createConversation(payloadJson) {
     var conversation = conversationComponent.createObject(root)
     if (!conversation) return null
+    conversationSequence++
+    conversation.windowTitle = "Omarchy Ask #" + conversationSequence
     conversations = conversations.concat([conversation])
     activeOverlay = conversation
     conversation.fontScale = Qt.binding(function() { return root.fontScale })
@@ -303,10 +339,22 @@ Item {
     conversation.keyboardDeceleration = Qt.binding(function() { return root.keyboardDeceleration })
     conversation.fileOpenCommand = Qt.binding(function() { return root.fileOpenCommand })
     conversation.fileEditCommand = Qt.binding(function() { return root.fileEditCommand })
+    conversation.agentName = root.selectedAgent
+    conversation.modelName = root.selectedModel
+    conversation.reasoningEffort = root.selectedReasoningEffort
+    conversation.harnessSelectorOpen = Qt.binding(function() {
+      return harnessSelectorLoader.item && harnessSelectorLoader.item.visible
+    })
     conversation.motionTunerOpen = Qt.binding(function() { return motionTuner.visible })
     conversation.fontScaleStepRequested.connect(function(step) { root.adjustFontScale(step) })
     conversation.fontScaleResetRequested.connect(function() { root.setFontScale(1) })
     conversation.motionTunerRequested.connect(function() { motionTuner.open() })
+    conversation.harnessSelectorRequested.connect(function() { root.openHarnessSelector() })
+    conversation.sessionRestartRequested.connect(function() {
+      conversation.agentName = root.selectedAgent
+      conversation.modelName = root.selectedModel
+      conversation.reasoningEffort = root.selectedReasoningEffort
+    })
     conversation.copyConfirmed.connect(function() { root.showCopyToast() })
     conversation.permissionModeConfirmed.connect(function(mode) {
       root.persistedPermissionMode = mode === "yolo" ? "yolo" : "permission"
@@ -339,6 +387,7 @@ Item {
   }
 
   function closeAll() {
+    if (harnessSelectorLoader.item) harnessSelectorLoader.item.visible = false
     var snapshot = conversations.slice()
     for (var i = 0; i < snapshot.length; i++) snapshot[i].close()
     reconcileShortcutSubmap()

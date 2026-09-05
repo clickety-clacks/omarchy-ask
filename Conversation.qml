@@ -3,6 +3,7 @@ import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
+import Quickshell.Hyprland
 import qs.Commons
 import qs.Ui
 
@@ -22,6 +23,7 @@ Item {
   property bool outsideDismissArmed: false
   property bool sessionLost: false
   property bool pinned: false
+  property string windowTitle: "Omarchy Ask"
   property string statusText: ""
   property int activeReply: -1
   property string activeReplyMessageId: ""
@@ -38,12 +40,18 @@ Item {
   signal fontScaleStepRequested(real step)
   signal fontScaleResetRequested()
   signal motionTunerRequested()
+  signal harnessSelectorRequested()
+  signal sessionRestartRequested()
   property real keyboardLineImpulse: 335
   property real keyboardPageImpulse: 689
   property real keyboardDeceleration: 608
   property var fileOpenCommand: []
   property var fileEditCommand: []
   property bool motionTunerOpen: false
+  property bool harnessSelectorOpen: false
+  property string agentName: ""
+  property string modelName: ""
+  property string reasoningEffort: ""
   property bool fileBrowserOpen: false
   property string searchMode: ""
   property string fileBrowserMode: "files"
@@ -80,6 +88,10 @@ Item {
   onSearchModeChanged: if (searchMode !== "@" && !fileBrowserOpen) closeFilePreview()
   onMotionTunerOpenChanged: {
     if (!motionTunerOpen && opened && !pinned)
+      Qt.callLater(function() { prompt.forceActiveFocus() })
+  }
+  onHarnessSelectorOpenChanged: {
+    if (!harnessSelectorOpen && opened && !pinned)
       Qt.callLater(function() { prompt.forceActiveFocus() })
   }
 
@@ -170,9 +182,21 @@ Item {
     // Preserve the historical PATH lookup when no platform command is
     // supplied. Omarchy deployments can provide any argv prefix explicitly.
     if (!Array.isArray(prefix) || prefix.length === 0) prefix = ["node"]
-    return ["env", "HUGINN_INTERNAL=1"].concat(prefix).concat([
+    return ["env", "HUGINN_INTERNAL=1", "ASK_AGENT=" + agentName,
+      "ASK_MODEL=" + modelName,
+      "ASK_REASONING_EFFORT=" + reasoningEffort].concat(prefix).concat([
       Quickshell.env("HOME") + "/.config/omarchy/plugins/clickety-clacks.ask/bridge/bridge.js"
     ])
+  }
+
+  function requestCompletionAttention() {
+    // FloatingWindow is a Quickshell wrapper, not a QWindow. The standard
+    // QtQuick attached property gives us this surface's actual native window.
+    // Qt emits native urgency; an optional desktop attention service can
+    // consume it without an Ask-specific command or window-title lookup.
+    var window = pinnedWindow.contentItem.Window.window
+    if (!opened || !pinned || !window || window.active) return
+    window.alert(0)
   }
 
   function close() {
@@ -956,6 +980,13 @@ Item {
     return true
   }
 
+  function handleHarnessSelectorKey(event) {
+    if ((event.modifiers & Qt.MetaModifier) === 0) return false
+    if (event.key !== Qt.Key_Comma) return false
+    harnessSelectorRequested()
+    return true
+  }
+
   // Every text item in the card takes focus when it is clicked, and a focused
   // TextEdit claims the navigation keys before a window shortcut can see them.
   // The composer and the transcript therefore route keys through here, so the
@@ -1024,6 +1055,7 @@ Item {
     Shortcut { sequence: "Ctrl+0"; enabled: !conversation.menuOpen && !conversation.fileBrowserOpen; onActivated: conversation.resetFontScale() }
     Shortcut { sequence: "Ctrl+P"; onActivated: conversation.pinConversation() }
     Shortcut { sequence: "Ctrl+,"; onActivated: conversation.motionTunerRequested() }
+    Shortcut { sequence: "Meta+,"; onActivated: conversation.harnessSelectorRequested() }
     Shortcut { sequence: "Ctrl+1"; enabled: conversation.menuOpen || conversation.fileBrowserOpen; onActivated: conversation.selectVisibleSlot(0) }
     Shortcut { sequence: "Ctrl+2"; enabled: conversation.menuOpen || conversation.fileBrowserOpen; onActivated: conversation.selectVisibleSlot(1) }
     Shortcut { sequence: "Ctrl+3"; enabled: conversation.menuOpen || conversation.fileBrowserOpen; onActivated: conversation.selectVisibleSlot(2) }
@@ -1154,8 +1186,8 @@ Item {
         // A pinned conversation can finish while the user is elsewhere. Ask
         // for compositor attention after the final model update has rendered;
         // Qt suppresses the request when this window is already active.
-        if (pinned && !pinnedWindow.active)
-          Qt.callLater(function() { if (root.pinned) pinnedWindow.alert(0) })
+        if (pinned)
+          Qt.callLater(root.requestCompletionAttention)
         Qt.callLater(function() { prompt.forceActiveFocus() })
       } else if (event.type === "steered") {
         steeringPending = false
@@ -1198,9 +1230,20 @@ Item {
         steeringPending = false
         activeReply = -1
         activeReplyMessageId = ""
-        statusText = String(event.message || "Session lost") + " · close to restart"
+        statusText = String(event.message || "Session lost")
       }
     } catch (error) {}
+  }
+
+  function restartSession() {
+    if (!sessionLost || agent.running) return
+    sessionRestartRequested()
+    sessionLost = false
+    queuedPrompt = ""
+    steeringSupported = false
+    steeringPending = false
+    statusText = "Starting agent…"
+    agent.running = true
   }
 
   function answerPermission(allow) {
@@ -1246,7 +1289,7 @@ Item {
       root.waiting = false
       root.activeReply = -1
       root.sessionLost = true
-      root.statusText = "ACP session ended · close to restart"
+      root.statusText = "The agent connection closed. Start a new session or choose another harness."
     }
     stdout: SplitParser { onRead: function(line) { root.handleAgentLine(line) } }
     stderr: SplitParser {
@@ -1266,7 +1309,7 @@ Item {
     WlrLayershell.layer: WlrLayer.Overlay
     // Let the auxiliary motion window become active without dismissing this
     // layer popup, then reclaim exclusive prompt focus when it closes.
-    WlrLayershell.keyboardFocus: root.motionTunerOpen
+    WlrLayershell.keyboardFocus: root.motionTunerOpen || root.harnessSelectorOpen
       ? WlrKeyboardFocus.OnDemand
       : WlrKeyboardFocus.Exclusive
     exclusionMode: ExclusionMode.Ignore
@@ -1329,7 +1372,10 @@ Item {
       color: root.background
       visible: root.layoutReady && !root.fileBrowserOpen
       radius: root.pinned ? 0 : Style.cornerRadius
-      borderSpec: Border.surfaceSpec("menu", "border", root.border, Math.max(1, Style.space(2)))
+      // A pinned surface is plain content. Hyprland owns its outer frame,
+      // rounding and clipping; only the layer-shell overlay draws a frame.
+      borderSpec: root.pinned ? Border.none()
+        : Border.surfaceSpec("menu", "border", root.border, Math.max(1, Style.space(2)))
       padding: Style.spacing.panelPadding
       opacity: 0
       Behavior on height {
@@ -1545,7 +1591,7 @@ Item {
                 selectionColor: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.32)
                 selectedTextColor: root.foreground
                 Keys.onPressed: function(event) {
-                  if (root.handleFontKey(event) || root.handlePinKey(event) || root.handleMotionTunerKey(event) || root.handleScrollKey(event)) event.accepted = true
+                  if (root.handleFontKey(event) || root.handlePinKey(event) || root.handleMotionTunerKey(event) || root.handleHarnessSelectorKey(event) || root.handleScrollKey(event)) event.accepted = true
                 }
               }
               TextEdit {
@@ -1565,7 +1611,7 @@ Item {
                 selectedTextColor: root.foreground
                 onLinkActivated: function(link) { Qt.openUrlExternally(link) }
                 Keys.onPressed: function(event) {
-                  if (root.handleFontKey(event) || root.handlePinKey(event) || root.handleMotionTunerKey(event) || root.handleScrollKey(event)) event.accepted = true
+                  if (root.handleFontKey(event) || root.handlePinKey(event) || root.handleMotionTunerKey(event) || root.handleHarnessSelectorKey(event) || root.handleScrollKey(event)) event.accepted = true
                 }
               }
             }
@@ -1599,7 +1645,33 @@ Item {
               color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.42)
               font.family: Style.font.family
               font.pixelSize: root.agentSize
-              elide: Text.ElideRight
+              wrapMode: Text.Wrap
+            }
+          }
+
+          Column {
+            width: stack.width
+            visible: root.sessionLost
+            spacing: Style.space(8)
+            Text {
+              width: parent.width
+              text: "Starting again keeps this text visible, but the agent will not remember the previous session."
+              wrapMode: Text.Wrap
+              color: root.foreground
+              font.family: Style.font.family
+              font.pixelSize: root.agentSize
+            }
+            Row {
+              spacing: Style.space(12)
+              Button {
+                text: "Start new session"
+                enabled: !agent.running
+                onClicked: root.restartSession()
+              }
+              Button {
+                text: "Choose harness…"
+                onClicked: root.harnessSelectorRequested()
+              }
             }
           }
 
@@ -1723,7 +1795,7 @@ Item {
                     return
                   }
                 }
-                if (root.handleFontKey(event) || root.handlePinKey(event) || root.handleMotionTunerKey(event) || root.handleScrollKey(event, true)) {
+                if (root.handleFontKey(event) || root.handlePinKey(event) || root.handleMotionTunerKey(event) || root.handleHarnessSelectorKey(event) || root.handleScrollKey(event, true)) {
                   event.accepted = true
                 } else if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
                     && (root.searchMode !== ""
@@ -2195,7 +2267,8 @@ Item {
       visible: root.layoutReady && root.fileBrowserOpen
       color: root.background
       radius: root.pinned ? 0 : Style.cornerRadius
-      borderSpec: Border.surfaceSpec("menu", "border", root.border, Math.max(1, Style.space(2)))
+      borderSpec: root.pinned ? Border.none()
+        : Border.surfaceSpec("menu", "border", root.border, Math.max(1, Style.space(2)))
 
       Column {
         id: fileContent
@@ -2770,7 +2843,7 @@ Item {
   FloatingWindow {
     id: pinnedWindow
     visible: root.opened && root.pinned
-    title: "Omarchy Ask"
+    title: root.windowTitle
     color: root.background
     implicitWidth: 760
     implicitHeight: 800

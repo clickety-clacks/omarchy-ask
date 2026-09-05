@@ -45,6 +45,7 @@ submap and enable it in `ask.json`:
 
 ```lua
 hl.define_submap("omarchy-ask", function()
+  hl.bind("SUPER + comma", hl.dsp.exec_cmd("omarchy-shell shell call clickety-clacks.ask openHarnessSelector '{}'"))
   hl.bind("CTRL + SHIFT + SPACE", hl.dsp.exec_cmd("omarchy-shell shell toggle clickety-clacks.ask '{}'"))
   hl.bind("SUPER + ESCAPE", hl.dsp.submap("reset")) -- crash-safe escape hatch
 end)
@@ -84,17 +85,38 @@ settings. Remove it too if you want to clear all Ask state:
 rm ~/.config/omarchy/ask.json
 ```
 
-## Agent and working directory
+## Agent, model, and working directory
 
-Claude is the default. Set `ASK_AGENT=codex` in the Omarchy Shell environment to use Codex ACP. Set `ASK_CWD` to choose the agent's working directory; otherwise Ask uses `$HOME`.
+Without a saved override, Ask follows Omarchy’s Default Agent and that system
+harness’s model and thinking settings. Ask launches the system Codex or Claude
+executable from `PATH`; it never falls back to a bundled harness. Explicit
+`CODEX_PATH` and `CLAUDE_CODE_EXECUTABLE` launch overrides remain supported.
+Set `ASK_CWD` to choose the working directory; otherwise Ask uses `$HOME`.
+
+Press `Super+,` in Ask to choose the harness, model, and thinking level used
+by new conversations. The selection is stored in `ask.json` and takes priority
+over Omarchy’s default. Choose “Omarchy default” to remove the Ask override.
+Existing conversations keep their current ACP session. After a connection
+failure, “Start new session” uses the latest selection. Previous text stays
+visible, but is not replayed to the new agent. Missing or unsupported harnesses
+show a recovery message instead of starting an onboarding flow.
 
 Ask historically runs its bridge with `node` from `PATH` and launches the ACP
 adapter installed in `bridge/node_modules`. Deployments can replace both paths
 without proxy processes or shell parsing: `ASK_BRIDGE_COMMAND` is a JSON argv
 prefix for running `bridge.js`, and `ASK_ACP_COMMAND` is the complete JSON argv
 for the adapter. For example, the latter may be
-`["mise","exec","--","codex-acp"]`. `ASK_AGENT` still selects protocol behavior
+`["mise","exec","--","codex-acp"]`. Harness-specific deployments may use
+`ASK_CODEX_ACP_COMMAND` and `ASK_CLAUDE_ACP_COMMAND`; these take priority over
+the legacy shared `ASK_ACP_COMMAND`. `ASK_AGENT` still selects protocol behavior
 and display name; executable selection belongs to the deployment.
+
+Pinned conversations use the native Qt window's attention request when a reply
+finishes while unfocused. Hyprland receives urgency for that exact window;
+optional services such as Yoohoo can consume it without any Ask integration.
+No attention service or `ASK_ATTENTION_COMMAND` configuration is required.
+Pinned content draws no outer frame or rounded mask: Hyprland owns the border,
+rounding and clipping. The transient overlay retains its themed frame.
 
 Each conversation starts its own ACP bridge and session and reuses them for
 every turn. Pinning retains that exact process and session in a normal window;
@@ -118,6 +140,8 @@ opening Ask again creates an independent conversation.
   Return action, or press Return/modifier+Return for a specific action
 - `Ctrl+,`: open the live scroll-motion curve editor beside Ask; drag its
   endpoint to choose coast distance and duration directly
+- `Super+,`: choose the harness, model, and thinking level for new
+  conversations; Return saves and Escape cancels
 - Arithmetic, functions, aggregates such as `sum 10 34 100`, and unit
   conversions such as `10 km in miles` appear as the first suggestion even
   inside ordinary prose. Selecting the row copies its answer.

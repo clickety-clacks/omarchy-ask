@@ -45,8 +45,11 @@ Omarchy Shell
 7. Closing cancels unresolved permissions, asks ACP to close the session, sends
    SIGTERM to the agent, and uses SIGKILL only as a short shutdown fallback.
 8. When a turn finishes in an unfocused pinned conversation, its toplevel asks
-   the compositor for attention once. Overlay conversations never request
-   attention and completion never steals focus.
+   the compositor for attention through `contentItem.Window.window.alert(0)`.
+   Quickshell's FloatingWindow wrapper exposes neither `alert` nor `active`;
+   both must be accessed on the native Qt window. No title/PID lookup, external
+   attention command, or Yoohoo dependency is involved. Overlay and focused
+   conversations never request attention. The compositor owns activation policy.
 
 ## Permission invariants
 
@@ -96,8 +99,10 @@ The input's `>` is visual chrome and is never included in the submitted text.
 
 Omarchy Ask intentionally stores no transcript. QML holds rendered messages in
 memory; closing the owning conversation clears them. The app-owned durable
-state includes permission, display, motion, search, and optional file
-open/edit command settings in `ask.json`. That file has two writers —
+state includes permission, display, motion, search, optional file open/edit
+commands, and the selected harness, model, and reasoning effort in `ask.json`.
+Existing conversations retain their ACP session when these defaults change;
+new conversations receive a frozen copy. That file has two writers —
 `bridge.js` for the mode, `Ask.qml` for
 the scale — so each must merge into the existing contents rather than replace
 them.

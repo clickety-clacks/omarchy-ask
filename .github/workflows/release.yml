@@ -39,6 +39,15 @@ jobs:
             exit 1
           fi
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Run bridge regression tests
+        run: |
+          npm ci --ignore-scripts --prefix bridge
+          node --test bridge/harness-policy.test.js bridge/harness-errors.test.js
+
       - name: Validate source
         run: |
           set -euo pipefail
@@ -57,7 +66,12 @@ jobs:
           VERSION: ${{ inputs.version }}
         run: |
           target="$(git rev-parse HEAD)"
+          notes=()
+          if test -f "releases/$VERSION.md"; then
+            notes=(--notes-file "releases/$VERSION.md")
+          fi
           gh release create "v$VERSION" \
             --target "$target" \
             --title "Omarchy Ask $VERSION" \
+            "${notes[@]}" \
             --generate-notes

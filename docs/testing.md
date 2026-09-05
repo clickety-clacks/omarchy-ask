@@ -10,6 +10,7 @@ From the repository root:
 
 ```sh
 node --check bridge/bridge.js
+node --test bridge/harness-policy.test.js bridge/harness-errors.test.js
 git diff --check
 
 check_dir=$(mktemp -d /tmp/omarchy-ask-check.XXXXXX)
@@ -22,6 +23,11 @@ The clean copy is required because npm creates symlinks under
 distributable plugin tree.
 
 ## Installation smoke test
+
+For opt-in live system-harness verification, run
+`node bridge/model-smoke.js --full`. This sends 41 short tool-free prompts
+using existing logins and verifies model/effort metadata and response text.
+Omit `--full` for the default plus eight models at low effort.
 
 ```sh
 omarchy plugin add https://github.com/clickety-clacks/omarchy-ask.git --enable --yes
@@ -56,7 +62,12 @@ its original global binding still exists and works after dismissal.
    friction, distance, and duration update live in every open conversation;
    close and reopen Ask and confirm the values persisted. Reset restores the
    defaults.
-8. Type `Hey what is 5+5`, `sum 10 34 100 110 123`, `72 F to C`, and
+8. Press Super+, from both overlay and pinned windows. Confirm the selector
+   shows Codex/Claude, model, and thinking controls; Escape cancels and Return
+   saves. Open a new conversation and confirm the bridge uses the selection,
+   then restart the shell and confirm it persists. Verify an already-open
+   conversation retains its existing ACP session.
+9. Type `Hey what is 5+5`, `sum 10 34 100 110 123`, `72 F to C`, and
    `5 GiB in MB`. Confirm the calculator is always the first row, its equation
    is subordinate to the answer, long equations elide in the middle, and
    selecting it copies the answer. Confirm prose containing an isolated number
@@ -122,7 +133,9 @@ its original global binding still exists and works after dismissal.
 9. Leave a pinned conversation unfocused while its reply completes. Confirm
    Hyprland receives one urgency event, focus and workspace do not change, and
    focusing the Ask window clears its attention state. Repeat while Ask is
-   focused and confirm it does not enter the attention list.
+   focused and confirm it does not enter the attention list. Repeat with two
+   pinned conversations using native window urgency; confirm only
+   the conversation that completed is marked.
 
 Useful observations:
 

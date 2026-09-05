@@ -6,6 +6,8 @@ import { Readable, Writable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { resolveHarness, resolveExecutable } from "./harness-policy.js";
+import { explainHarnessError, needsNewSession } from "./harness-errors.js";
 import {
   ClientSideConnection,
   PROTOCOL_VERSION,
@@ -13,7 +15,14 @@ import {
 } from "@agentclientprotocol/sdk";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const agentName = process.env.ASK_AGENT === "codex" ? "codex" : "claude";
+function startupValue(resolve) {
+  try { return resolve(); }
+  catch (error) {
+    emit({ type: "fatal", message: error.message });
+    process.exit(1);
+  }
+}
+const agentName = startupValue(() => resolveHarness());
 const bundledAgentBinary = join(
   here,
   "node_modules",
@@ -21,7 +30,10 @@ const bundledAgentBinary = join(
   agentName === "codex" ? "codex-acp" : "claude-agent-acp",
 );
 function configuredAgentCommand() {
-  const raw = String(process.env.ASK_ACP_COMMAND || "").trim();
+  const specificName = agentName === "codex"
+    ? "ASK_CODEX_ACP_COMMAND" : "ASK_CLAUDE_ACP_COMMAND";
+  const raw = String(process.env[specificName]
+    || process.env.ASK_ACP_COMMAND || "").trim();
   if (!raw) return [bundledAgentBinary];
   let command;
   try { command = JSON.parse(raw); }
@@ -31,7 +43,7 @@ function configuredAgentCommand() {
     throw new Error("ASK_ACP_COMMAND must be a non-empty JSON array of non-empty strings");
   return command;
 }
-const agentCommand = configuredAgentCommand();
+const agentCommand = startupValue(configuredAgentCommand);
 const cwd = process.env.ASK_CWD || process.env.HOME || process.cwd();
 const settingsDir = join(process.env.HOME || process.cwd(), ".config", "omarchy");
 const settingsPath = join(settingsDir, "ask.json");
@@ -84,16 +96,13 @@ function flatOptions(options) {
 
 function matchingValue(config, wanted) {
   if (!wanted) return "";
-  const needle = wanted.toLowerCase().replace(/[^a-z0-9]+/g, "");
-  const option = flatOptions(config?.options).find((candidate) => {
-    const text = `${candidate.value || ""} ${candidate.name || ""}`
-      .toLowerCase().replace(/[^a-z0-9]+/g, "");
-    return text.includes(needle);
-  });
+  const option = flatOptions(config?.options).find(candidate => candidate.value === wanted);
   return option?.value || "";
 }
 
 async function applyRequestedModel(configOptions) {
+  if (process.env.ASK_INSPECT_CONFIG === "1")
+    emit({ type: "config_options", configOptions });
   const requests = [
     { wanted: process.env.ASK_MODEL, ids: ["model"], categories: ["model"] },
     { wanted: process.env.ASK_REASONING_EFFORT,
@@ -103,10 +112,12 @@ async function applyRequestedModel(configOptions) {
     if (!request.wanted) continue;
     const config = (configOptions || []).find((option) =>
       request.ids.includes(option.id) || request.categories.includes(option.category));
-    const value = matchingValue(config, request.wanted);
+    // Claude's adapter resolves exact version IDs against its SDK metadata,
+    // including versioned IDs exposed under aliases such as opus[1m].
+    const value = matchingValue(config, request.wanted)
+      || (agentName === "claude" && config?.category === "model" ? request.wanted : "");
     if (!config || !value) {
-      emit({ type: "diagnostic", text: `Configured ACP option unavailable: ${request.wanted}` });
-      continue;
+      throw new Error(`Configured ACP option unavailable: ${request.wanted}`);
     }
     const response = await connection.setSessionConfigOption({
       sessionId,
@@ -114,12 +125,31 @@ async function applyRequestedModel(configOptions) {
       value,
     });
     configOptions = response.configOptions || configOptions;
+    if (process.env.ASK_INSPECT_CONFIG === "1")
+      emit({ type: "config_options", configOptions });
   }
+}
+
+const childEnvironment = { ...process.env, HUGINN_INTERNAL: "1" };
+// ACP is the transport adapter; the installed system harness owns execution.
+// Explicit deployment overrides retain precedence. Never silently use the
+// adapter's transitive harness dependency when the system install is absent.
+if (agentName === "codex")
+  childEnvironment.CODEX_PATH = startupValue(() => resolveExecutable(agentName));
+else
+  childEnvironment.CLAUDE_CODE_EXECUTABLE = startupValue(() => resolveExecutable(agentName));
+if (agentName === "codex") {
+  let codexConfig = {};
+  try { codexConfig = JSON.parse(process.env.CODEX_CONFIG || "{}"); } catch {}
+  if (process.env.ASK_MODEL) codexConfig.model = process.env.ASK_MODEL;
+  if (process.env.ASK_REASONING_EFFORT)
+    codexConfig.model_reasoning_effort = process.env.ASK_REASONING_EFFORT;
+  childEnvironment.CODEX_CONFIG = JSON.stringify(codexConfig);
 }
 
 const child = spawn(agentCommand[0], agentCommand.slice(1), {
   cwd,
-  env: { ...process.env, HUGINN_INTERNAL: "1" },
+  env: childEnvironment,
   stdio: ["pipe", "pipe", "pipe"],
 });
 
@@ -202,7 +232,14 @@ async function start() {
     clientCapabilities: { session: { configOptions: {} } },
   });
   steeringSupported = initialized?._meta?.steering?.supported === true;
-  const session = await connection.newSession({ cwd, mcpServers: [] });
+  const session = await connection.newSession({ cwd, mcpServers: [],
+    ...(agentName === "claude" && process.env.ASK_MODEL ? {
+      _meta: { claudeCode: { options: {
+        model: process.env.ASK_MODEL,
+        settings: { model: process.env.ASK_MODEL, availableModels: [process.env.ASK_MODEL] },
+      } } },
+    } : {}),
+  });
   sessionId = session.sessionId;
   await applyRequestedModel(session.configOptions || []);
   emit({
@@ -302,7 +339,9 @@ input.on("line", (line) => {
   if (message.type === "prompt") {
     prompt(String(message.text || "")).catch((error) => {
       turnRunning = false;
-      emit({ type: "error", message: error.message || String(error) });
+      const fatal = needsNewSession(error);
+      emit({ type: fatal ? "fatal" : "error", message: explainHarnessError(error, agentName) });
+      if (fatal) shutdown().finally(() => process.exit(1));
     });
   } else if (message.type === "steer") {
     steer(String(message.text || "")).catch((error) => {
@@ -345,7 +384,7 @@ process.on("SIGTERM", () => shutdown().finally(() => process.exit(0)));
 process.on("SIGINT", () => shutdown().finally(() => process.exit(0)));
 
 start().catch((error) => {
-  emit({ type: "fatal", message: error.message || String(error) });
+  emit({ type: "fatal", message: explainHarnessError(error, agentName) });
   child.kill("SIGTERM");
   process.exit(1);
 });

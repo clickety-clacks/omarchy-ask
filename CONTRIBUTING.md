@@ -44,18 +44,15 @@ transcripts, credentials, or `~/.config/omarchy/ask.json`.
 2. Update `manifest.json` to the semantic version being released.
 3. Commit the version and release-ready changes.
 4. Push `main`.
-5. Create and push an annotated `vX.Y.Z` tag at that commit.
-6. Publish a GitHub release from the tag with user-facing notes.
+5. Dispatch the **Release main tip** GitHub workflow with the manifest version.
+6. Wait for the workflow to create the tag and publish the GitHub release.
 7. Confirm `main`, the tag, the manifest version, and the GitHub release agree.
 
 Example:
 
 ```sh
-git tag -a vX.Y.Z -m 'Omarchy Ask X.Y.Z'
 git push origin main
-git push origin vX.Y.Z
-gh release create vX.Y.Z --repo clickety-clacks/omarchy-ask \
-  --title 'Omarchy Ask X.Y.Z' --notes-file /path/to/release-notes.md
+gh workflow run release.yml --ref main -f version=X.Y.Z
 ```
 
 Do not move an existing release tag. Correct mistakes with a new patch release.
