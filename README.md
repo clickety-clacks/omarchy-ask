@@ -173,9 +173,10 @@ up to 5 MiB per image and 20 MiB per draft, without resizing or conversion.
 Images leave `@`, `^`, or `%` search mode while keeping the query text, and
 suppress launcher actions until removed. Ordinary text paste remains available.
 
-Submitted images stay visible and locked during the answer. Wait for the reply
+Submitted images stay visible beside their transcript prompt for the chat lifetime.
+Clearing the composer does not remove them. Wait for the reply
 before pasting another image; supported text steering remains available.
-Success clears the submitted images. On failure, Ask restores the original
+Success retains the submitted images in the transcript. On failure, Ask restores the original
 draft if the composer is empty. If newer text exists, the failed original has
 its own labeled thumbnails and **Retry original** action. Return sends only the
 current composer draft. Retry never overwrites newer text or runs automatically.

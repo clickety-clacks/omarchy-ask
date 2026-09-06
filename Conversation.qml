@@ -24,6 +24,8 @@ Item {
   // A submitted image prompt owns its text and bytes independently of the
   // editable composer. Failed originals never become the next draft implicitly.
   property var activeImageDraft: null
+  // Transcript references live until close, independently of mutable retry drafts.
+  property var transcriptImages: ({})
   property var failedImageDrafts: []
   property int imageDraftSequence: 0
   property var queuedImages: []
@@ -244,6 +246,7 @@ Item {
     clearImageAttachments()
     activeImageDraft = null
     failedImageDrafts = []
+    transcriptImages = ({})
     queuedImages = []
     sessionLost = false
     queuedPrompt = ""
@@ -368,9 +371,6 @@ Item {
     var groups = failedImageDrafts.map(function(original) {
       return { kind: "failed", draft: original, images: original.images, locked: false }
     })
-    if (activeImageDraft)
-      groups.push({ kind: "submitted", draft: activeImageDraft,
-        images: activeImageDraft.images, locked: true })
     if (imageAttachments.length > 0)
       groups.push({ kind: "draft", draft: null, images: imageAttachments, locked: false })
     return groups
@@ -1270,6 +1270,11 @@ Item {
     if (clearComposer) prompt.text = ""
     messages.append({ role: "You", body: text || "Image attached" })
     var promptIndex = messages.count - 1
+    if (images.length > 0) {
+      var retained = Object.assign({}, transcriptImages)
+      retained[promptIndex] = images.slice()
+      transcriptImages = retained
+    }
     activeReply = messages.count
     activeReplyMessageId = ""
     messages.append({ role: "Claude", body: "" })
@@ -1747,6 +1752,8 @@ Item {
               id: turn
               required property string role
               required property string body
+              required property int index
+              readonly property var submittedImages: root.transcriptImages[index] || []
               readonly property bool human: role === "You"
               width: stack.width
               // A prompt sits above its reply by the same gap the reply puts
@@ -1755,7 +1762,9 @@ Item {
               // scale. The stack's own spacing is subtracted so it is not
               // counted twice.
               height: human
-                ? humanText.contentHeight + Math.max(0, agentLineMetric.contentHeight - stack.spacing)
+                ? humanText.contentHeight + transcriptStrip.height
+                  + (transcriptStrip.visible ? Style.space(8) : 0)
+                  + Math.max(0, agentLineMetric.contentHeight - stack.spacing)
                 : (body === "" ? 0 : agentText.contentHeight + Style.space(18))
 
               Text {
@@ -1784,6 +1793,28 @@ Item {
                 selectedTextColor: root.foreground
                 Keys.onPressed: function(event) {
                   if (root.handleFontKey(event) || root.handlePinKey(event) || root.handleMotionTunerKey(event) || root.handleHarnessSelectorKey(event) || root.handleScrollKey(event)) event.accepted = true
+                }
+              }
+              ListView {
+                id: transcriptStrip
+                y: humanText.contentHeight + Style.space(8)
+                width: parent.width
+                visible: turn.human && turn.submittedImages.length > 0
+                height: visible ? Style.space(66) : 0
+                orientation: ListView.Horizontal
+                spacing: Style.space(8)
+                boundsBehavior: Flickable.StopAtBounds
+                clip: true
+                model: turn.submittedImages
+                delegate: Image {
+                  required property var modelData
+                  width: Style.space(82)
+                  height: Style.space(66)
+                  source: "data:" + modelData.mimeType + ";base64," + modelData.data
+                  sourceSize.width: Style.space(164)
+                  sourceSize.height: Style.space(132)
+                  fillMode: Image.PreserveAspectFit
+                  cache: false
                 }
               }
               TextEdit {
