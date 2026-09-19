@@ -2067,8 +2067,8 @@ Item {
 
                   Text {
                     anchors.centerIn: parent
-                    visible: !modelData.isApp && !parent.fileImage
-                    text: modelData.icon || ""
+                    visible: !parent.fileImage && (!modelData.isApp || !root.appLibrary)
+                    text: modelData.isApp && !root.appLibrary ? "󰀻" : (modelData.icon || "")
                     color: parent.parent.current ? root.accent : root.foreground
                     font.family: modelData.iconFont && modelData.iconFont.length > 0
                       ? modelData.iconFont
@@ -2077,7 +2077,7 @@ Item {
                   }
                   Image {
                     anchors.fill: parent
-                    visible: modelData.isApp || parent.fileImage
+                    visible: (modelData.isApp && root.appLibrary) || parent.fileImage
                     source: modelData.isApp && root.appLibrary
                       ? root.appLibrary.iconSource(modelData.appIcon)
                       : (parent.fileImage ? root.localFileUrl(modelData.absolutePath) : "")

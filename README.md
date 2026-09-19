@@ -23,8 +23,8 @@ An AI-enabled launcher for Omarchy.
 - A working Claude Code or Codex login
 
 Omarchy Ask is not compatible with Omarchy 3 and its Waybar-based desktop. It
-is currently verified on Omarchy `4.0.0-1`; later Quattro releases are intended
-to remain compatible through the public shell-plugin contract.
+is verified on Omarchy `4.0.0-1` and `4.0.4-1`. Later Quattro releases are
+intended to remain compatible through the public shell-plugin contract.
 
 ## Install
 

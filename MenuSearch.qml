@@ -31,10 +31,11 @@ Item {
   property var whenResults: ({})
   property var checkedResults: ({})
 
-  // What the composer is asking about, and what it gets back.
-  // Supplied by the conversation, which gets it from the shell. Without it
-  // only menu rows are searchable; applications are simply absent.
+  // What the composer is asking about, and what it gets back. Older Omarchy
+  // shells supply the app library directly; newer shells can scope it away
+  // from an overlay plugin, while retaining the desktop-entry registry.
   property var appLibrary: null
+  property var desktopEntries: DesktopEntries.applications
   property string query: ""
   property int maxRows: 8
   // Matching is cheap, but every change to the row count resizes the card,
@@ -65,6 +66,86 @@ Item {
   signal actionRan(string label)
   signal browseRequested(string mode, string query)
   signal pathActionRequested(string path, bool repository, string verb)
+
+  function fallbackAppScore(entry, name, query) {
+    var words = name.toLowerCase().split(/[^a-z0-9]+/)
+      .filter(function(word) { return word !== "" })
+    var genericName = String(entry && (entry.genericName || entry.subtext) || "").toLowerCase()
+    var id = String(entry && entry.id || "").toLowerCase()
+    var keywords = []
+    try { keywords = Array.isArray(entry.keywords) ? entry.keywords : [] } catch (error) { }
+    var terms = query.toLowerCase().split(/\s+/).filter(function(term) { return term !== "" })
+    var haystacks = [name.toLowerCase(), genericName, id].concat(keywords.map(function(word) {
+      return String(word || "").toLowerCase()
+    }))
+    if (!terms.every(function(term) {
+      return haystacks.some(function(haystack) { return haystack.indexOf(term) >= 0 })
+    })) return -1
+    var lowerName = name.toLowerCase()
+    if (lowerName === query.toLowerCase()) return 0
+    if (words.indexOf(query.toLowerCase()) >= 0) return 1
+    if (lowerName.indexOf(query.toLowerCase()) === 0) return 2
+    var nameIndex = lowerName.indexOf(query.toLowerCase())
+    if (nameIndex >= 0) return 10 + nameIndex
+    if (genericName.indexOf(query.toLowerCase()) >= 0) return 100
+    if (id.indexOf(query.toLowerCase()) >= 0) return 200
+    return 300
+  }
+
+  function matchingApps(text) {
+    var value = String(text || "").replace(/^%|^@|^\^/, "").trim()
+    var found = []
+    if (root.appLibrary) {
+      var appRows = root.appLibrary.sortedEntries(value)
+      for (var index = 0; index < appRows.length; index++) {
+        var app = appRows[index].entry
+        // PluginAppLibraryApi returns entries that have already passed the
+        // shell's hidden-entry policy.
+        if (!app) continue
+        var name = root.appLibrary.entryName(app)
+        if (!name) continue
+        var subtext = root.appLibrary.entrySubtext(app) || ""
+        found.push({
+          id: "app:" + app.id,
+          label: name,
+          path: subtext || "Apps",
+          icon: "",
+          iconFont: "",
+          isApp: true,
+          appIcon: app.icon || "",
+          appId: String(app.id || ""),
+          action: "",
+          route: ""
+        })
+      }
+      return found
+    }
+    var entries = root.desktopEntries && root.desktopEntries.values
+    if (!entries || typeof entries.length !== "number") return found
+    for (var entryIndex = 0; entryIndex < entries.length; entryIndex++) {
+      var entry = entries[entryIndex]
+      var entryName = String(entry && (entry.name || entry.id) || "")
+      var score = root.fallbackAppScore(entry, entryName, value)
+      if (!entryName || score < 0) continue
+      found.push({
+        id: "app:" + String(entry.id || entryName),
+        label: entryName,
+        path: String(entry.genericName || entry.subtext || "Apps"),
+        icon: "󰀻",
+        iconFont: "JetBrainsMono Nerd Font",
+        isApp: true,
+        appIcon: String(entry.icon || ""),
+        appId: String(entry.id || ""),
+        action: "",
+        route: "",
+        fallbackApp: true,
+        score: score
+      })
+    }
+    return found.sort(function(left, right) {
+      return left.score - right.score || left.label.localeCompare(right.label)
+    })
+  }
 
   function rebuild() {
     var merged = MenuModel.mergeMenuSources(root.defaultMenuItems, root.userMenuItems)
@@ -217,64 +298,15 @@ Item {
       })
     }
 
-    // Applications come from the shell's own AppLibrary -- the same engine the
-    // launcher and the menu's `apps` provider use -- so ATC, Element X and the
-    // rest rank here exactly as they do there, icons included.
-    if (root.appLibrary) {
-      var appRows = root.appLibrary.sortedEntries(text)
-      for (var a = 0; a < appRows.length && a < 40; a++) {
-        var app = appRows[a].entry
-        if (!app || root.appLibrary.isHiddenEntry(app)) continue
-        var name = root.appLibrary.entryName(app)
-        if (!name) continue
-        var subtext = root.appLibrary.entrySubtext(app) || ""
-
-        // Scored by the menu's own function rather than by position, so an
-        // application competes in the same numeric space as a menu row and
-        // the tiers interleave correctly. searchScore already knows about
-        // `kind: "app"`. depthFor tolerates a map holding only this entry:
-        // item() returns null for the missing parent and the walk stops.
-        var appAliases = [subtext]
-        try {
-          if (app.keywords && typeof app.keywords.join === "function")
-            appAliases = appAliases.concat(app.keywords)
-        } catch (e) { }
-
-        var appEntry = {
-          id: "app:" + app.id,
-          parent: "apps",
-          kind: "app",
-          label: name,
-          aliases: appAliases,
-          description: subtext,
-          // AppLibrary already ranked these; keep that as the tiebreak within
-          // a tier instead of discarding it.
-          order: a
-        }
-        var appItems = ({})
-        appItems[appEntry.id] = appEntry
-
-        scored.push({
-          id: appEntry.id,
-          label: name,
-          path: subtext || "Apps",
-          icon: "",
-          iconFont: "",
-          isApp: true,
-          appIcon: app.icon || "",
-          appId: String(app.id || ""),
-          action: "",
-          route: "",
-          score: MenuModel.searchScore(appItems, appEntry, text)
-        })
-      }
-    }
+    // Matching apps are always first. A launcher result is directly
+    // actionable, while menu and search results remain available after it.
+    var appMatches = root.matchingApps(text)
 
     // Ascending: searchScore counts up from 0 for the best match, and it
     // already ranks a title hit above an alias hit above a description-only
     // hit. Sorting the other way put the weakest matches first.
     scored.sort(function(a, b) { return a.score - b.score })
-    root.rows = scored.slice(0, root.maxRows)
+    root.rows = appMatches.concat(scored).slice(0, root.maxRows)
   }
 
   function run(index, modifiers) {
@@ -294,8 +326,12 @@ Item {
         : ((flags & Qt.AltModifier) !== 0 ? "edit" : "open"))
       root.pathActionRequested(row.absolutePath, Boolean(row.isRepository), verb)
     } else if (row.isApp) {
-      if (!root.appLibrary) return false
-      root.appLibrary.launch(row.appId, row.label)
+      if (root.appLibrary) root.appLibrary.launch(row.appId, row.label)
+      else {
+        var desktopId = String(row.appId || "").replace(/\.desktop$/i, "")
+        if (!desktopId) return false
+        Quickshell.execDetached(["gtk-launch", desktopId])
+      }
     } else if (row.isWindow) {
       Quickshell.execDetached([
         "node",
