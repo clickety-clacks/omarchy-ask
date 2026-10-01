@@ -15,3 +15,11 @@ test('explicit environment is a fallback, never a guessed desktop index', () => 
   for (const invalid of ['', '0', '../other', 'contains space'])
     assert.equal(platform.instance('', invalid), '');
 });
+test('the Hyprland module is never targeted on Scottland, even through its shim socket', () => {
+  const shim = '/run/user/1000/hypr/scottland_1_2/.socket.sock';
+  assert.equal(platform.compositor('Scottland:Wayfire:wlroots'), 'scottland');
+  assert.equal(platform.instance(shim, 'scottland_1_2', 'Scottland:Wayfire:wlroots'), '');
+  assert.equal(platform.compositor('Hyprland'), 'hyprland');
+  assert.equal(platform.compositor(''), 'hyprland');
+  assert.equal(platform.instance('/run/user/1000/hypr/current_123/.socket.sock', '', 'Hyprland'), 'current_123');
+});

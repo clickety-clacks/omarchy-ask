@@ -12,7 +12,7 @@ Item {
   required property string surfaceName
   required property string chords
   readonly property string instance: ShortcutPlatform.instance(Hyprland.requestSocketPath,
-    Quickshell.env("HYPRLAND_INSTANCE_SIGNATURE"))
+    Quickshell.env("HYPRLAND_INSTANCE_SIGNATURE"), Quickshell.env("XDG_CURRENT_DESKTOP"))
   readonly property var nativeWindow: targetWindow ? targetWindow.contentItem.Window.window : null
   readonly property bool focused: !!nativeWindow && nativeWindow.active && targetWindow.visible
   property bool ready: false

@@ -143,3 +143,23 @@ and components from `qs.Commons` and `qs.Ui`. Omarchy 3 is unsupported.
 The verified baseline is Omarchy `4.0.0-1`. Changes to public Omarchy shell
 components, Quickshell window semantics, or ACP permission option kinds require
 the regression checklist in `docs/testing.md`.
+
+## Compositors
+
+Ask's behavior (agents, file search, conversations, the menu) is the same on
+every compositor. Only two things depend on the compositor, and each has one
+home:
+
+| Need | Where | Hyprland | Scottland |
+|---|---|---|---|
+| List windows, active window, focus a window | `bridge/compositor.js` | `hyprctl clients`/`activewindow`; focus via `eval` | The same queries, served by Scottland's Hyprland IPC shim; focus via `dispatch` (the shim ignores `eval`) |
+| Ask's keys take precedence over system shortcuts | `ShortcutPlatform.js` gates `ShortcutRuntime`/`ShortcutScope` | Compositor module in `hyprland/` | Not available: native system shortcuts keep precedence (the module's documented fallback) |
+
+The backend is chosen from the session's `XDG_CURRENT_DESKTOP`, never by
+probing whichever compositor answers: Scottland's shim answers Hyprland's
+socket too. No other file calls `hyprctl` or chooses a compositor; a new
+compositor is a new backend in those two places.
+
+Shortcut precedence on Scottland needs a general Scottland feature that lets
+a focused surface claim specific keys (Scottland's adapter invariant O12). Ask
+cannot add it alone: Scottland does not carry code for one particular app.

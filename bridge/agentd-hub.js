@@ -9,6 +9,7 @@ import { execFile, spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import { hostname } from "node:os";
+import { compositor } from "./compositor.js";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import {
@@ -315,19 +316,13 @@ async function readStartTicks(pid) {
 }
 
 async function hyprClientsSnapshot() {
-  try {
-    const { stdout } = await execFileAsync("hyprctl", ["clients", "-j"], {
-      timeout: 1200, maxBuffer: 2 * 1024 * 1024,
-    });
-    const parsed = JSON.parse(stdout);
-    return Array.isArray(parsed) ? parsed : null;
-  } catch { return null; }
+  try { return await compositor.clients(); } catch { return null; }
 }
 
 async function compositorWindows() {
   const clients = await hyprClientsSnapshot();
   if (!Array.isArray(clients))
-    throw new ResolverClientError("resolver_window_snapshot_unavailable", "Hyprland window snapshot is unavailable");
+    throw new ResolverClientError("resolver_window_snapshot_unavailable", "compositor window snapshot is unavailable");
   const mapped = clients.filter((client) => client?.mapped === true);
   const windows = await Promise.all(mapped.map(async (client) => {
     const stableId = String(client?.stableId || "");
@@ -352,7 +347,7 @@ async function compositorWindows() {
   for (const window of windows) {
     const key = JSON.stringify([window.stableId, window.address, window.pid, window.startTimeTicks]);
     if (identities.has(key))
-      throw new ResolverClientError("resolver_window_snapshot_unavailable", "Hyprland returned a duplicate window identity");
+      throw new ResolverClientError("resolver_window_snapshot_unavailable", "compositor returned a duplicate window identity");
     identities.add(key);
   }
   return windows;
@@ -543,18 +538,10 @@ async function showNotice(agent, reason) {
 
 async function focus(address) {
   if (!addressPattern.test(String(address || ""))) return false;
-  try {
-    await execFileAsync("hyprctl", ["eval", `hl.dispatch(hl.dsp.focus({ window = "address:${address}" }))`], { timeout: 1200 });
-    return true;
-  } catch { return false; }
+  try { return await compositor.focusWindow(address); } catch { return false; }
 }
 
-async function activeWindowAddress() {
-  try {
-    const { stdout } = await execFileAsync("hyprctl", ["activewindow", "-j"], { timeout: 1200 });
-    return String(JSON.parse(stdout).address || "").toLowerCase();
-  } catch { return ""; }
-}
+const activeWindowAddress = () => compositor.activeWindowAddress();
 
 function chooseExistingCandidate(candidates, clients, activeAddress) {
   const eligible = candidates.filter(candidate => resolveFocusAddress(candidate, clients));

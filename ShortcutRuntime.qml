@@ -13,7 +13,7 @@ Item {
   property string error: ""
   property string lastWarning: ""
   readonly property string instance: ShortcutPlatform.instance(Hyprland.requestSocketPath,
-    Quickshell.env("HYPRLAND_INSTANCE_SIGNATURE"))
+    Quickshell.env("HYPRLAND_INSTANCE_SIGNATURE"), Quickshell.env("XDG_CURRENT_DESKTOP"))
   signal settled()
 
   function finish(success, message) {
@@ -34,6 +34,12 @@ Item {
     if (available || loader.running) return
     pending = true
     error = ""
+    if (instance === "") {
+      finish(false, ShortcutPlatform.compositor(Quickshell.env("XDG_CURRENT_DESKTOP")) === "hyprland"
+        ? "Ask shortcut support needs a Hyprland instance. Native system shortcuts remain active."
+        : "Ask shortcut support is Hyprland-only. Native system shortcuts keep precedence.")
+      return
+    }
     var script = decodeURIComponent(String(Qt.resolvedUrl("hyprland/manage.mjs")).replace(/^file:\/\//, ""))
     var command = ["node", script, "load", "--instance", instance]
     var cache = String(Quickshell.env("ASK_SHORTCUT_CACHE_DIR") || "")

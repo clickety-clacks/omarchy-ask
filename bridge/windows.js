@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { promisify } from "node:util";
+import { compositor } from "./compositor.js";
 
 const execFileAsync = promisify(execFile);
 const addressPattern = /^0x[0-9a-f]+$/i;
@@ -11,14 +12,7 @@ function emit(value) {
   process.stdout.write(`${JSON.stringify(value)}\n`);
 }
 
-async function clients() {
-  const { stdout } = await execFileAsync("hyprctl", ["clients", "-j"], {
-    timeout: 1200,
-    maxBuffer: 2 * 1024 * 1024,
-  });
-  const parsed = JSON.parse(stdout);
-  return Array.isArray(parsed) ? parsed : [];
-}
+const clients = () => compositor.clients();
 
 async function processTree() {
   const { stdout } = await execFileAsync("ps", ["-eo", "pid=,ppid="], {
@@ -168,16 +162,15 @@ async function focus(message) {
   if (!stableIdPattern.test(stableId)) return;
 
   // Re-resolve immediately before dispatch. Never reuse an address returned
-  // by search: the window may have closed or Hyprland may have restarted.
+  // by search: the window may have closed or the compositor may have restarted.
   const window = (await clients()).find((candidate) =>
     String(candidate.stableId || "") === stableId && candidate.mapped);
   const address = String(window?.address || "");
   if (!addressPattern.test(address) || address === "0x0") return;
 
-  // The only interpolation is a validated hexadecimal address. An empty,
-  // malformed, or disappeared target exits above and never reaches Lua.
-  const code = `hl.dispatch(hl.dsp.focus({ window = "address:${address}" }))`;
-  await execFileAsync("hyprctl", ["eval", code], { timeout: 1200 });
+  // An empty, malformed, or disappeared target exits above and never reaches
+  // the compositor.
+  await compositor.focusWindow(address);
 }
 
 if (process.argv[2] === "--focus") {
