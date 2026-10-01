@@ -46,3 +46,40 @@ test("malformed addresses never reach the compositor", async () => {
     assert.equal(result.args, null);
   }
 });
+
+test("Scottland presents through its own request, by the shim's stableId", async () => {
+  const sent = [];
+  const call = async (method, data) => { sent.push([method, data]); return { result: "ok" }; };
+  const original = backends.scottland;
+  const dir = mkdtempSync(join(tmpdir(), "ask-compositor-"));
+  const fake = join(dir, "hyprctl");
+  writeFileSync(fake, `#!${process.execPath}\nif (process.argv.includes("clients")) console.log(JSON.stringify([{ address: "0x5c07000001ea", stableId: "000001ea", mapped: true }]));\nelse console.log("ok");\n`);
+  chmodSync(fake, 0o755);
+  const path = process.env.PATH;
+  process.env.PATH = `${dir}:${path}`;
+  try {
+    assert.equal(await original.presentWindow("0x5c07000001ea", call), true);
+    assert.deepEqual(sent, [["scottland/present", { window: 0x1ea }]]);
+  } finally {
+    process.env.PATH = path;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a Scottland without the present request still focuses the window", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "ask-compositor-"));
+  const log = join(dir, "args.json");
+  const fake = join(dir, "hyprctl");
+  writeFileSync(fake, `#!${process.execPath}\nif (process.argv.includes("clients")) console.log(JSON.stringify([{ address: "0x5c07000001ea", stableId: "000001ea", mapped: true }]));\nelse { require("fs").writeFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2))); console.log("ok"); }\n`);
+  chmodSync(fake, 0o755);
+  const path = process.env.PATH;
+  process.env.PATH = `${dir}:${path}`;
+  try {
+    const old = async () => ({ error: "No such method found!" });
+    assert.equal(await backends.scottland.presentWindow("0x5c07000001ea", old), true);
+    assert.deepEqual(JSON.parse(readFileSync(log, "utf8")), ["dispatch", 'hl.dsp.focus({ window = "address:0x5c07000001ea" })']);
+  } finally {
+    process.env.PATH = path;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

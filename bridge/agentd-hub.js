@@ -538,7 +538,7 @@ async function showNotice(agent, reason) {
 
 async function focus(address) {
   if (!addressPattern.test(String(address || ""))) return false;
-  try { return await compositor.focusWindow(address); } catch { return false; }
+  try { return await compositor.presentWindow(address); } catch { return false; }
 }
 
 const activeWindowAddress = () => compositor.activeWindowAddress();

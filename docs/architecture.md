@@ -147,12 +147,13 @@ the regression checklist in `docs/testing.md`.
 ## Compositors
 
 Ask's behavior (agents, file search, conversations, the menu) is the same on
-every compositor. Only two things depend on the compositor, and each has one
+every compositor. Only these depend on the compositor, and each has one
 home:
 
 | Need | Where | Hyprland | Scottland |
 |---|---|---|---|
 | List windows, active window, focus a window | `bridge/compositor.js` | `hyprctl clients`/`activewindow`; focus via `eval` | The same queries, served by Scottland's Hyprland IPC shim; focus via `dispatch` (the shim ignores `eval`) |
+| Present a window the user picked (an agent, a window search result) | `bridge/compositor.js` `presentWindow` | Focus (switches workspace) | `scottland/present` over Wayfire IPC: a widget opens back into its window, a side window flies to the middle at 100%; falls back to focus on Scottland builds without it |
 | Ask's keys take precedence over system shortcuts | `ShortcutPlatform.js` gates `ShortcutRuntime`/`ShortcutScope` | Compositor module in `hyprland/` | Not available: native system shortcuts keep precedence (the module's documented fallback) |
 
 The backend is chosen from the session's `XDG_CURRENT_DESKTOP`, never by

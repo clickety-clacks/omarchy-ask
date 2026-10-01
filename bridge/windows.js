@@ -170,7 +170,7 @@ async function focus(message) {
 
   // An empty, malformed, or disappeared target exits above and never reaches
   // the compositor.
-  await compositor.focusWindow(address);
+  await compositor.presentWindow(address);
 }
 
 if (process.argv[2] === "--focus") {
