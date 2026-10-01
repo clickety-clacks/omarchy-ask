@@ -26,7 +26,7 @@ Scope {
         runtimeError: manager.shortcutRuntimeError,
         pinned: manager.conversations.length ? manager.conversations[0].pinned : false,
         pinPending: manager.conversations.length ? manager.conversations[0].pinPending : false,
-        selector: manager.conversations.length ? manager.conversations[0].harnessSelectorOpen : false,
+        settings: manager.conversations.length ? manager.conversations[0].settingsOpen : false,
         focused: manager.conversations.length ? manager.conversations[0].shortcutFocused : false,
         ready: manager.conversations.length ? manager.conversations[0].shortcutReady : false,
         bridgePid: manager.conversations.length ? manager.conversations[0].bridgeProcessId : null,

@@ -63,8 +63,7 @@ Item {
   property real fontScale: 1
   signal fontScaleStepRequested(real step)
   signal fontScaleResetRequested()
-  signal motionTunerRequested()
-  signal harnessSelectorRequested()
+  signal settingsRequested()
   signal agentRequested(string id)
   signal sessionRestartRequested()
   property real keyboardLineImpulse: 335
@@ -73,8 +72,7 @@ Item {
   property var fileOpenCommand: []
   property var fileEditCommand: []
   property var agentRows: []
-  property bool motionTunerOpen: false
-  property bool harnessSelectorOpen: false
+  property bool settingsOpen: false
   property string agentName: ""
   property string modelName: ""
   property string reasoningEffort: ""
@@ -197,12 +195,8 @@ Item {
     menuSelectionIdentity = ""
     menuIndex = -1
   }
-  onMotionTunerOpenChanged: {
-    if (!motionTunerOpen && opened && !pinned)
-      Qt.callLater(function() { prompt.forceActiveFocus() })
-  }
-  onHarnessSelectorOpenChanged: {
-    if (!harnessSelectorOpen && opened && !pinned)
+  onSettingsOpenChanged: {
+    if (!settingsOpen && opened && !pinned)
       Qt.callLater(function() { prompt.forceActiveFocus() })
   }
 
@@ -1297,17 +1291,10 @@ Item {
     return true
   }
 
-  function handleMotionTunerKey(event) {
+  function handleSettingsKey(event) {
     if ((event.modifiers & Qt.ControlModifier) === 0) return false
     if (event.key !== Qt.Key_Comma) return false
-    motionTunerRequested()
-    return true
-  }
-
-  function handleHarnessSelectorKey(event) {
-    if ((event.modifiers & Qt.MetaModifier) === 0) return false
-    if (event.key !== Qt.Key_Comma) return false
-    harnessSelectorRequested()
+    settingsRequested()
     return true
   }
 
@@ -1383,8 +1370,7 @@ Item {
       enabled: conversation.waiting && !conversation.steeringSupported
       onActivated: conversation.pasteClipboard()
     }
-    Shortcut { sequence: "Ctrl+,"; onActivated: conversation.motionTunerRequested() }
-    Shortcut { sequence: "Meta+,"; onActivated: conversation.harnessSelectorRequested() }
+    Shortcut { sequence: "Ctrl+,"; onActivated: conversation.settingsRequested() }
     Shortcut { sequence: "Ctrl+1"; enabled: conversation.menuOpen || conversation.fileBrowserOpen; onActivated: conversation.selectVisibleSlot(0) }
     Shortcut { sequence: "Ctrl+2"; enabled: conversation.menuOpen || conversation.fileBrowserOpen; onActivated: conversation.selectVisibleSlot(1) }
     Shortcut { sequence: "Ctrl+3"; enabled: conversation.menuOpen || conversation.fileBrowserOpen; onActivated: conversation.selectVisibleSlot(2) }
@@ -1667,7 +1653,9 @@ Item {
 
   PanelWindow {
     id: panel
-    visible: root.opened && (!root.pinned || root.pinPending)
+    // Steps aside while the settings window is open: an overlay would cover
+    // that ordinary window. It comes back, with its state, when settings close.
+    visible: root.opened && (!root.pinned || root.pinPending) && !root.settingsOpen
     anchors { top: true; bottom: true; left: true; right: true }
     color: "transparent"
     WlrLayershell.namespace: "omarchy-ask"
@@ -1676,7 +1664,7 @@ Item {
     ShortcutFocus {
       id: panelFocus
       targetWindow: panel
-      wanted: !root.motionTunerOpen && !root.harnessSelectorOpen
+      wanted: !root.settingsOpen
       allowed: panelScope.admitted
     }
     exclusionMode: ExclusionMode.Ignore
@@ -1968,7 +1956,7 @@ Item {
                 selectionColor: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.32)
                 selectedTextColor: root.foreground
                 Keys.onPressed: function(event) {
-                  if (root.handlePermissionKey(event) || root.handleFontKey(event) || root.handlePinKey(event) || root.handleMotionTunerKey(event) || root.handleHarnessSelectorKey(event) || root.handleScrollKey(event)) event.accepted = true
+                  if (root.handlePermissionKey(event) || root.handleFontKey(event) || root.handlePinKey(event) || root.handleSettingsKey(event) || root.handleScrollKey(event)) event.accepted = true
                 }
               }
               TextEdit {
@@ -1988,7 +1976,7 @@ Item {
                 selectedTextColor: root.foreground
                 onLinkActivated: function(link) { Qt.openUrlExternally(link) }
                 Keys.onPressed: function(event) {
-                  if (root.handlePermissionKey(event) || root.handleFontKey(event) || root.handlePinKey(event) || root.handleMotionTunerKey(event) || root.handleHarnessSelectorKey(event) || root.handleScrollKey(event)) event.accepted = true
+                  if (root.handlePermissionKey(event) || root.handleFontKey(event) || root.handlePinKey(event) || root.handleSettingsKey(event) || root.handleScrollKey(event)) event.accepted = true
                 }
               }
             }
@@ -2046,8 +2034,8 @@ Item {
                 onClicked: root.restartSession()
               }
               Button {
-                text: "Choose harness…"
-                onClicked: root.harnessSelectorRequested()
+                text: "Settings…"
+                onClicked: root.settingsRequested()
               }
             }
           }
@@ -2271,7 +2259,7 @@ Item {
                     return
                   }
                 }
-                if (root.handleFontKey(event) || root.handlePinKey(event) || root.handleMotionTunerKey(event) || root.handleHarnessSelectorKey(event) || root.handleScrollKey(event, true)) {
+                if (root.handleFontKey(event) || root.handlePinKey(event) || root.handleSettingsKey(event) || root.handleScrollKey(event, true)) {
                   event.accepted = true
                 } else if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
                     && (root.searchScopeActive

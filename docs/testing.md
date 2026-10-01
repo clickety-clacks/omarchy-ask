@@ -13,7 +13,7 @@ node --check bridge/bridge.js
 node --test bridge/harness-policy.test.js bridge/harness-errors.test.js
 node --test tests/search-settings.test.cjs tests/agentd-hub-bridge.test.mjs tests/agent-window-resolver.test.mjs
 node --test tests/resolver-process-cleanup.test.mjs tests/agentd-hub-snapshot.test.mjs
-node --test tests/shortcut-*.test.* tests/compositor.test.mjs tests/app-search.test.cjs
+node --test tests/shortcut-*.test.* tests/compositor.test.mjs tests/app-search.test.cjs tests/settings-window.test.cjs
 git diff --check
 
 check_dir=$(mktemp -d /tmp/omarchy-ask-check.XXXXXX)
@@ -59,8 +59,9 @@ attachment correctness. Before accepting this feature, verify:
 
 - Full bucket ordering and balanced fill, including more than twenty Go-plus-
   seed rows, exhausted buckets, and keyboard/click summary activation.
-- Ctrl+, endpoint editing, deliberate commit, Escape cancellation, restart
-  persistence, and preservation of unrelated settings.
+- Ctrl+, settings window: endpoint editing, hub commit on Return or close,
+  Escape leaving the hub unchanged, restart persistence, and preservation of
+  unrelated settings.
 - Pushed complete snapshots, removal, unreachable/unknown status, malformed
   then quiet streams, helper crashes, endpoint changes, and no polling.
 - Existing direct/local-tmux and pre-existing SSH/mosh windows resolve to the
@@ -173,15 +174,16 @@ disposable compositor setup, fixture paths, and unresolved acceptance work.
    brake or reverse it, and the transcript coasts to a stop after release.
 6. Scroll a long transcript with a trackpad and with a touch drag. Confirm the
    surface coasts after release and stops cleanly at both ends.
-7. Press Ctrl+, from the composer and the transcript. Confirm the motion editor
-   opens as a companion popup immediately right of Ask and both remain usable.
-   Drag its curve endpoint and verify impulse,
+7. Press Ctrl+, from the composer and the transcript. Confirm one settings
+   window opens as an ordinary window (movable like any other), Ask's popup
+   steps aside, and returns with its text when Ctrl+, or Escape closes the
+   window. Drag the curve endpoint and verify impulse,
    friction, distance, and duration update live in every open conversation;
    close and reopen Ask and confirm the values persisted. Reset restores the
    defaults.
-8. Press Super+, from both overlay and pinned windows. Confirm the selector
-   shows Codex/Claude, model, and thinking controls; Escape cancels and Return
-   saves. Open a new conversation and confirm the bridge uses the selection,
+8. Press Ctrl+, from both overlay and pinned windows. Confirm the settings
+   window shows Codex/Claude, model, and thinking controls and that choices
+   apply at once. Open a new conversation and confirm the bridge uses the selection,
    then restart the shell and confirm it persists. Verify an already-open
    conversation retains its existing ACP session.
 9. Type `Hey what is 5+5`, `sum 10 34 100 110 123`, `72 F to C`, and

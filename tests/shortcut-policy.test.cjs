@@ -60,9 +60,8 @@ test('no desktop keymap or wildcard modifiers are claimed in any context', () =>
     const state = Object.fromEntries(fields.map((field, i) => [field, !!(mask & (1 << i))]));
     const keys = claims(state);
     assert.equal(keys.size, policy.conversation(state).split(' ').length, 'duplicate declaration');
-    for (const chord of ['0:F5', '64:h', '64:F12', '12:h', '65:comma', '68:comma'])
+    for (const chord of ['0:F5', '64:h', '64:F12', '12:h', '64:comma', '65:comma', '68:comma'])
       assert(!keys.has(chord), chord);
   }
-  assert.equal(policy.harness(), '0:Escape 64:comma 0:Return');
-  assert.equal(policy.motion(), '0:Escape 4:comma');
+  assert.equal(policy.settings(), '0:Escape 4:comma');
 });

@@ -5,7 +5,7 @@
 function conversation(state) {
   var keys = ["0:Up", "0:Down", "0:Page_Up", "0:Page_Down",
     "4:j", "4:k", "4:u", "4:d", "4:equal", "4:plus",
-    "4:minus", "4:0", "4:p", "4:comma", "64:comma"]
+    "4:minus", "4:0", "4:p", "4:comma"]
   // Pinned windows deliberately have no Escape-to-close shortcut. The
   // composer's selection dismissal is the only exception in that window.
   if (state.overlay || (state.composer && state.menuSelected)) keys.push("0:Escape")
@@ -26,5 +26,4 @@ function conversation(state) {
   return keys.join(" ")
 }
 
-function harness() { return "0:Escape 64:comma 0:Return" }
-function motion() { return "0:Escape 4:comma" }
+function settings() { return "0:Escape 4:comma" }

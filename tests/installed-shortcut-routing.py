@@ -31,6 +31,7 @@ def main():
         return any(item.get("namespace") == name for monitor in json.loads(hypr("layers", "-j")).values()
                    for level in monitor["levels"].values() for item in level)
     def windows(): return [w for w in json.loads(hypr("clients", "-j")) if w.get("title", "").startswith("Omarchy Ask #")]
+    def settings(): return any(w.get("title") == "Ask Settings" for w in json.loads(hypr("clients", "-j")))
     def wait_for(predicate, message):
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
@@ -87,40 +88,30 @@ def main():
         # before asking for focus. The dedicated fixture audits that boundary;
         # this test exercises coexistence after normal shell initialization.
         time.sleep(0.4)
-        # Opening the selector with a chord normally consumed by the desktop
-        # proves this is the focused Ask, not just native dispatch elsewhere.
-        key(51, 125)
-        wait_for(lambda: layer("omarchy-ask-harness"), "installed selector shortcut lost to desktop binding")
+        key(51, 29)  # Ctrl+,
+        wait_for(settings, "installed settings window did not open")
+        time.sleep(0.2)
         key(63); key(35, 125)
         assert counts() == (11, 1), counts()
         key(1)
-        wait_for(lambda: not layer("omarchy-ask-harness"), "selector did not close")
-        passed("installed Ask selector overrides the desktop chord and preserves native F5/Super+H")
-
-        key(51, 29)
-        wait_for(lambda: layer("omarchy-ask-motion"), "installed motion popup did not open")
-        time.sleep(0.2)
-        key(63)
-        assert counts() == (12, 2), counts()
-        key(1)
-        wait_for(lambda: not layer("omarchy-ask-motion"), "motion popup lost keyboard focus with pointer outside its card")
-        passed("installed motion popup retains keyboard focus outside its card and preserves native F5")
+        wait_for(lambda: not settings(), "settings window did not close on Escape")
+        passed("installed settings window opens with Ctrl+, and preserves native F5/Super+H")
 
         key(63); key(35, 125)
-        assert counts() == (23, 3), counts()
+        assert counts() == (22, 2), counts()
         hypr("eval", 'hl.unbind("SUPER + H"); hl.bind("SUPER + H", function() ask_installed_test.system = ask_installed_test.system + 100 end)')
         key(35, 125)
-        assert counts() == (123, 3), counts()
+        assert counts() == (122, 2), counts()
         passed("installed overlay respects a newly changed binding without reopening")
 
         key(25, 29)  # Ctrl+P
         wait_for(lambda: len(windows()) == 1 and not layer("omarchy-ask"), "installed pin handoff did not finish")
-        key(51, 125)
-        wait_for(lambda: layer("omarchy-ask-harness"), "first installed pinned shortcut failed")
+        key(51, 29)
+        wait_for(settings, "first installed pinned shortcut failed")
         key(1)
-        wait_for(lambda: not layer("omarchy-ask-harness"), "pinned selector did not close")
+        wait_for(lambda: not settings(), "pinned settings did not close")
         key(63); key(35, 125)
-        assert counts() == (224, 4), counts()
+        assert counts() == (223, 3), counts()
         passed("installed pinned window preserves app precedence and live native bindings")
 
         ipc("toggle", "clickety-clacks.ask", "{}")
@@ -136,14 +127,14 @@ def main():
         # window or send text into another application to test this.
         peers = [w for w in json.loads(hypr("clients", "-j")) if w.get("class") == "aquamarine"]
         if len(peers) == 1:
-            key(51, 125)
-            wait_for(lambda: layer("omarchy-ask-harness"), "selector did not reopen for focus test")
+            key(51, 29)
+            wait_for(settings, "settings did not reopen for focus test")
             time.sleep(0.2)
             hypr("eval", f'hl.unbind("SUPER + H"); hl.bind("SUPER + H", hl.dsp.focus({{window="address:{peers[0]["address"]}"}}))')
             key(35, 125)
             wait_for(lambda: json.loads(hypr("activewindow", "-j")).get("address") == peers[0]["address"], "native focus shortcut could not leave the settings popup")
-            assert layer("omarchy-ask-harness"), "focus test unexpectedly closed the popup"
-            passed("native focus shortcut leaves the still-mapped installed settings popup")
+            assert settings(), "focus test unexpectedly closed the settings window"
+            passed("native focus shortcut leaves the still-open installed settings window")
         if uinput_image: passed("all installed-shell cases used the kernel uinput keyboard, not Wayland virtual input")
     finally:
         if keyboard.poll() is None:

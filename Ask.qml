@@ -214,12 +214,21 @@ Item {
     onTriggered: root.flushSettings()
   }
 
-  MotionTuner {
-    id: motionTuner
+  Settings {
+    id: settings
+    agent: root.selectedAgent
+    model: root.selectedModel
+    reasoningEffort: root.selectedReasoningEffort
     impulse: root.keyboardLineImpulse
     deceleration: root.keyboardDeceleration
     hubHost: root.agentdHubHost
     hubPort: root.agentdHubPort
+    onAgentApplied: function(nextAgent, nextModel, nextReasoningEffort) {
+      root.selectedAgent = nextAgent
+      root.selectedModel = nextModel
+      root.selectedReasoningEffort = nextReasoningEffort
+      settingsSaveTimer.restart()
+    }
     onMotionChanged: function(nextImpulse, nextDeceleration) {
       root.setKeyboardMotion(nextImpulse, nextDeceleration)
     }
@@ -233,29 +242,6 @@ Item {
     port: root.agentdHubPort
   }
 
-  Loader {
-    id: harnessSelectorLoader
-    source: Qt.resolvedUrl("HarnessSelector.qml")
-  }
-
-  Connections {
-    target: harnessSelectorLoader.item
-    function onApplied(nextAgent, nextModel, nextReasoningEffort) {
-      root.selectedAgent = nextAgent
-      root.selectedModel = nextModel
-      root.selectedReasoningEffort = nextReasoningEffort
-      settingsSaveTimer.restart()
-    }
-  }
-
-  function openHarnessSelector() {
-    var selector = harnessSelectorLoader.item
-    if (!selector) return
-    selector.agent = selectedAgent
-    selector.model = selectedModel
-    selector.reasoningEffort = selectedReasoningEffort
-    selector.open()
-  }
 
   PanelWindow {
     id: copyToast
@@ -320,7 +306,7 @@ Item {
       if (conversations[i] !== conversation) remaining.push(conversations[i])
     }
     conversations = remaining
-    if (remaining.length === 0) motionTuner.visible = false
+    if (remaining.length === 0 && settings.visible) settings.finish()
     Qt.callLater(function() { conversation.destroy() })
   }
 
@@ -343,14 +329,13 @@ Item {
     conversation.agentName = root.selectedAgent
     conversation.modelName = root.selectedModel
     conversation.reasoningEffort = root.selectedReasoningEffort
-    conversation.harnessSelectorOpen = Qt.binding(function() {
-      return harnessSelectorLoader.item && harnessSelectorLoader.item.visible
-    })
-    conversation.motionTunerOpen = Qt.binding(function() { return motionTuner.visible })
+    conversation.settingsOpen = Qt.binding(function() { return settings.visible })
     conversation.fontScaleStepRequested.connect(function(step) { root.adjustFontScale(step) })
     conversation.fontScaleResetRequested.connect(function() { root.setFontScale(1) })
-    conversation.motionTunerRequested.connect(function() { motionTuner.open() })
-    conversation.harnessSelectorRequested.connect(function() { root.openHarnessSelector() })
+    conversation.settingsRequested.connect(function() {
+      if (settings.visible) settings.finish()
+      else settings.open()
+    })
     conversation.agentRequested.connect(function(id) { agentdHub.activate(id) })
     conversation.sessionRestartRequested.connect(function() {
       conversation.agentName = root.selectedAgent
@@ -397,7 +382,7 @@ Item {
   function closeAll() {
     opening = false
     pendingOpenPayload = ""
-    if (harnessSelectorLoader.item) harnessSelectorLoader.item.visible = false
+    if (settings.visible) settings.finish()
     var snapshot = conversations.slice()
     for (var i = 0; i < snapshot.length; i++) snapshot[i].close()
   }

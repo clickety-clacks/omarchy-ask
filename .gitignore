@@ -3,3 +3,4 @@ bridge/node_modules/
 hyprland/*.so
 hyprland/abi-probe
 tests/.build/
+__pycache__/

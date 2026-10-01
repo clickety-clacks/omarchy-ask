@@ -572,40 +572,38 @@ test('agent summary and typed-prefix route share ampersand mode', () => {
   assert.equal(scope.searchMode, '');
 });
 
-test('MotionTuner endpoint editing commits only deliberately and Escape restores', () => {
+test('Settings hub endpoint commits only deliberately and Escape restores', () => {
   const events = [];
   const scope = {
-    visible: false,
-    hubHost: 'old.example', hubPort: 1234, openingHubHost: '', openingHubPort: 0,
-    hubHostInput: { text: '', length: 0, forceActiveFocus() {}, cursorPosition: 0 },
-    hubPortInput: { text: '', length: 0 },
-    curve: { requestPaint() {} },
-    Qt: { callLater(callback) { callback(); } },
+    visible: true, hubCommitted: false,
+    hubHost: 'old.example', hubPort: 1234, openingHubHost: 'old.example', openingHubPort: 1234,
+    hubHostBox: { input: { text: 'old.example' } },
+    hubPortBox: { input: { text: '1234' } },
   };
   scope.root = scope;
   scope.hubChanged = function(host, port) {
     events.push([host, port]); scope.hubHost = host; scope.hubPort = port;
   };
-  const source = readFileSync(join(repo, 'MotionTuner.qml'), 'utf8');
+  const source = readFileSync(join(repo, 'Settings.qml'), 'utf8');
   assert.doesNotMatch(source, /onEditingFinished:\s*root\.commitHub\(\)/,
     'focus loss must not persist endpoint edits');
   assert.match(source, /Key_Return\s*\|\|\s*event\.key === Qt\.Key_Enter[\s\S]*root\.commitHub/,
     'Return must commit even when an optional port is blank');
-  const functions = qmlFunctions(join(repo, 'MotionTuner.qml'),
-    ['open', 'normalizedHubPort', 'commitHub', 'cancelHub'], scope);
-  functions.open();
-  scope.hubHostInput.text = 'typed.example';
-  scope.hubPortInput.text = '5678';
+  const functions = qmlFunctions(join(repo, 'Settings.qml'),
+    ['normalizedHubPort', 'commitHub', 'cancel'], scope);
+  scope.hubHostBox.input.text = 'typed.example';
+  scope.hubPortBox.input.text = '5678';
   assert.equal(events.length, 0, 'typing and focus changes do not commit');
   functions.commitHub();
   assert.deepEqual(events.at(-1), ['typed.example', 5678]);
-  scope.hubPortInput.text = '70000';
+  scope.hubPortBox.input.text = '70000';
   functions.commitHub();
   assert.deepEqual(events.at(-1), ['typed.example', 65535],
     'committed endpoint uses the persisted port bounds');
   assert.equal(scope.openingHubPort, 65535);
-  scope.hubPortInput.text = '9999';
-  functions.cancelHub();
-  assert.deepEqual(events.at(-1), ['typed.example', 65535], 'Escape restores committed opening values');
-  assert.equal(scope.hubPortInput.text, '65535');
+  scope.hubPortBox.input.text = '9999';
+  functions.cancel();
+  assert.equal(events.length, 2, 'Escape after a commit changes nothing further');
+  assert.equal(scope.hubPortBox.input.text, '65535', 'Escape restores the committed value');
+  assert.equal(scope.visible, false);
 });

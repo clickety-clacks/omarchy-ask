@@ -1,7 +1,7 @@
 # Agent search (unreleased work)
 
 Ask's Agentd Hub integration is optional. Configure the hub machine address
-and port in the Ctrl+, settings popup. Host names are deployment settings,
+and port in the Ctrl+, settings window. Host names are deployment settings,
 not built-in product defaults. Removing the endpoint disables this source.
 Search remains available without a hub.
 

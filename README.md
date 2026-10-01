@@ -92,8 +92,8 @@ executable from `PATH`; it never falls back to a bundled harness. Explicit
 `CODEX_PATH` and `CLAUDE_CODE_EXECUTABLE` launch overrides remain supported.
 Set `ASK_CWD` to choose the working directory; otherwise Ask uses `$HOME`.
 
-Press `Super+,` in Ask to choose the harness, model, and thinking level used
-by new conversations. The selection is stored in `ask.json` and takes priority
+Press `Ctrl+,` in Ask to open its settings window and choose the harness,
+model, and thinking level used by new conversations. The selection is stored in `ask.json` and takes priority
 over Omarchy’s default. Choose “Omarchy default” to remove the Ask override.
 Existing conversations keep their current ACP session. After a connection
 failure, “Start new session” uses the latest selection. Previous text stays
@@ -137,10 +137,12 @@ opening Ask again creates an independent conversation.
 - `Ctrl+1` through `Ctrl+0`: move selection to the corresponding visible
   result (first through tenth); repeat the same shortcut to perform its normal
   Return action, or press Return/modifier+Return for a specific action
-- `Ctrl+,`: open settings beside Ask; adjust the scroll-motion curve or
-  configure an optional Agentd Hub address and port (unreleased worktree feature)
-- `Super+,`: choose the harness, model, and thinking level for new
-  conversations; Return saves and Escape cancels
+- `Ctrl+,`: open or close Ask's settings window: the harness, model, and
+  thinking level for new conversations, an optional Agentd Hub address and
+  port, and the scroll-motion curve. It is an ordinary window the desktop can
+  move. Choices apply at once; the hub address saves on Return or when the
+  window closes, and Escape closes it leaving the hub unchanged. Ask's popup
+  steps aside while it is open and returns afterwards.
 - Arithmetic, functions, aggregates such as `sum 10 34 100`, and unit
   conversions such as `10 km in miles` appear as suggestions even
   inside ordinary prose. Selecting the row copies its answer.
