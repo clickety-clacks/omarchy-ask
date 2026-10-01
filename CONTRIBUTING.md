@@ -12,9 +12,10 @@ cd omarchy-ask/bridge
 npm ci
 ```
 
-For live development, install or link the repository as an Omarchy user plugin
-and enable `clickety-clacks.ask`. Omarchy Shell reloads local plugin changes;
-use `omarchy restart shell` after structural QML changes or a stale reload.
+For live development, commit your change and install it with
+`scripts/install-local.sh --restart`. The Omarchy shell does not reload plugin
+files on its own. Branches, `main`, `stable` and releases are described in
+[`AGENTS.md`](AGENTS.md).
 
 ## Before committing
 
