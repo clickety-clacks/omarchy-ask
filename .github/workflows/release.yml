@@ -1,5 +1,11 @@
 name: Release main tip
 
+# Cuts a release from the tip of main and moves `stable` to it. `stable` is the
+# repository's default branch, so it is what `omarchy plugin add` clones and
+# `omarchy plugin update` follows: users get releases, while main is the
+# everyday development branch. See AGENTS.md, "Branches and releases".
+# Run with: gh workflow run release.yml --ref main -f version=X.Y.Z
+
 on:
   workflow_dispatch:
     inputs:
@@ -38,6 +44,9 @@ jobs:
             echo "v$VERSION already exists" >&2
             exit 1
           fi
+          # stable only ever moves forward to a released main commit.
+          git fetch origin stable
+          git merge-base --is-ancestor origin/stable HEAD
 
       - uses: actions/setup-node@v4
         with:
@@ -46,7 +55,9 @@ jobs:
       - name: Run bridge regression tests
         run: |
           npm ci --ignore-scripts --prefix bridge
-          node --test bridge/harness-policy.test.js bridge/harness-errors.test.js
+          node --test bridge/harness-policy.test.js bridge/harness-errors.test.js \
+            bridge/image-paste.test.js tests/compositor.test.mjs \
+            tests/shortcut-policy.test.cjs tests/shortcut-platform.test.cjs
 
       - name: Validate source
         run: |
@@ -59,6 +70,9 @@ jobs:
           node --check bridge/math.js
           node --check bridge/windows.js
           node --check bridge/reveal.js
+          node --check bridge/compositor.js
+          node --check bridge/agentd-hub.js
+          node --check bridge/file-search.js
 
       - name: Publish GitHub release
         env:
@@ -75,3 +89,9 @@ jobs:
             --title "Omarchy Ask $VERSION" \
             "${notes[@]}" \
             --generate-notes
+
+      - name: Move stable to the release
+        run: |
+          set -euo pipefail
+          # A plain push refuses anything but a fast-forward.
+          git push origin "HEAD:refs/heads/stable"
