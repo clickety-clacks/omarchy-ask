@@ -1,4 +1,5 @@
 import QtQuick
+import "ShortcutPolicy.js" as ShortcutPolicy
 import QtQuick.Controls
 import Quickshell
 import Quickshell.Wayland
@@ -11,9 +12,20 @@ PanelWindow {
   color: "transparent"
   WlrLayershell.namespace: "omarchy-ask-harness"
   WlrLayershell.layer: WlrLayer.Overlay
-  WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+  WlrLayershell.keyboardFocus: selectorFocus.mode
+  ShortcutFocus { id: selectorFocus; targetWindow: root; allowed: selectorScope.admitted }
   exclusionMode: ExclusionMode.Ignore
-  mask: Region { item: card }
+  ShortcutScope { id: selectorScope; targetWindow: root; surfaceName: "omarchy-ask-harness"; chords: ShortcutPolicy.harness() }
+  // Keep the transparent dismissal area in this surface's input region.
+  // Hyprland rechecks the pointer when Exclusive settles to OnDemand; a
+  // card-only region would send keyboard focus back to the window underneath
+  // whenever the selector was opened with the pointer outside its card.
+  MouseArea {
+    anchors.fill: parent
+    onClicked: function(mouse) {
+      if (!card.contains(Qt.point(mouse.x - card.x, mouse.y - card.y))) root.visible = false
+    }
+  }
 
   property string agent: "codex"
   property string model: "gpt-6-astra"

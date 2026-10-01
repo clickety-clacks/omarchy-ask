@@ -1,4 +1,5 @@
 import QtQuick
+import "ShortcutPolicy.js" as ShortcutPolicy
 import Quickshell
 import Quickshell.Wayland
 import qs.Commons
@@ -10,22 +11,71 @@ PanelWindow {
   color: "transparent"
   WlrLayershell.namespace: "omarchy-ask-motion"
   WlrLayershell.layer: WlrLayer.Overlay
-  WlrLayershell.keyboardFocus: visible
-    ? WlrKeyboardFocus.OnDemand
-    : WlrKeyboardFocus.None
+  WlrLayershell.keyboardFocus: tunerFocus.mode
+  ShortcutFocus { id: tunerFocus; targetWindow: root; allowed: tunerScope.admitted }
   exclusionMode: ExclusionMode.Ignore
-  mask: Region { item: tunerCard }
+  ShortcutScope { id: tunerScope; targetWindow: root; surfaceName: "omarchy-ask-motion"; chords: ShortcutPolicy.motion() }
+  // The transparent outside area retains keyboard focus after the opening
+  // prime and dismisses on click, like the other keyboard-summoned panels.
+  MouseArea {
+    anchors.fill: parent
+    onClicked: function(mouse) {
+      if (!tunerCard.contains(Qt.point(mouse.x - tunerCard.x, mouse.y - tunerCard.y))) {
+        root.cancelHub()
+        root.visible = false
+      }
+    }
+  }
 
   property real impulse: 335
   property real deceleration: 608
+  property string hubHost: ""
+  property int hubPort: 0
+  property string openingHubHost: ""
+  property int openingHubPort: 0
   readonly property real duration: impulse / deceleration
   readonly property real distance: impulse * impulse / (2 * deceleration)
   signal motionChanged(real impulse, real deceleration)
   signal resetRequested()
+  signal hubChanged(string host, int port)
 
   function open() {
+    openingHubHost = root.hubHost
+    openingHubPort = root.hubPort
+    hubHostInput.text = root.hubHost
+    hubPortInput.text = root.hubPort > 0 ? String(root.hubPort) : ""
     visible = true
     curve.requestPaint()
+    // Endpoint editing is an explicit settings transaction. Put the caret in
+    // the first field after the popup is admitted, while still allowing the
+    // curve and the rest of the card to be clicked normally.
+    Qt.callLater(function() {
+      if (root.visible) {
+        hubHostInput.forceActiveFocus()
+        hubHostInput.cursorPosition = hubHostInput.length
+      }
+    })
+  }
+
+  function normalizedHubPort(value) {
+    var port = Number(value)
+    if (!isFinite(port) || port <= 0) return 0
+    return Math.round(Math.max(1, Math.min(65535, port)))
+  }
+
+  function commitHub() {
+    var nextHost = String(hubHostInput.text || "").trim()
+    var nextPort = root.normalizedHubPort(hubPortInput.text)
+    root.hubChanged(nextHost, nextPort)
+    openingHubHost = nextHost
+    openingHubPort = nextPort
+  }
+
+  function cancelHub() {
+    hubHostInput.text = root.openingHubHost
+    hubPortInput.text = root.openingHubPort > 0 ? String(root.openingHubPort) : ""
+    if (root.hubHost !== root.openingHubHost || root.hubPort !== root.openingHubPort)
+      root.hubChanged(root.openingHubHost, root.openingHubPort)
   }
 
   function setFromEndpoint(seconds, pixels) {
@@ -36,13 +86,13 @@ PanelWindow {
     motionChanged(2 * d / t, 2 * d / (t * t))
   }
 
-  Shortcut { sequence: "Escape"; onActivated: root.visible = false }
-  Shortcut { sequence: "Ctrl+,"; onActivated: root.visible = false }
+  Shortcut { sequence: "Escape"; onActivated: { root.cancelHub(); root.visible = false } }
+  Shortcut { sequence: "Ctrl+,"; onActivated: { root.commitHub(); root.visible = false } }
 
   Rectangle {
     id: tunerCard
     width: Math.min(Style.space(560), parent.width - Style.gapsOut * 2)
-    height: Math.min(Style.space(500), parent.height - Style.gapsOut * 2)
+    height: Math.min(Style.space(620), parent.height - Style.gapsOut * 2)
     readonly property real companionGap: Style.space(18)
     readonly property real askHalfWidth: Style.space(270)
     x: Math.min(parent.width - width - Style.gapsOut,
@@ -82,7 +132,7 @@ PanelWindow {
       Rectangle {
         id: graph
         width: parent.width
-        height: Math.max(Style.space(250), parent.height - Style.space(160))
+        height: Math.max(Style.space(200), parent.height - Style.space(250))
         color: Qt.rgba(Color.menu.text.r, Color.menu.text.g, Color.menu.text.b, 0.035)
         border.color: Qt.rgba(Color.menu.text.r, Color.menu.text.g, Color.menu.text.b, 0.14)
         border.width: 1
@@ -224,6 +274,85 @@ PanelWindow {
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
             onClicked: root.resetRequested()
+          }
+        }
+
+        Text {
+          width: parent.width
+          text: "Agentd Hub (optional)"
+          color: Color.menu.text
+          font.family: Style.font.family
+          font.pixelSize: Style.font.body
+          font.bold: true
+        }
+
+        Row {
+          width: parent.width
+          spacing: Style.space(10)
+          Rectangle {
+            width: parent.width - hubPortInputBox.width - parent.spacing
+            height: Style.space(38)
+            color: Qt.rgba(Color.menu.text.r, Color.menu.text.g, Color.menu.text.b, 0.05)
+            border.color: Qt.rgba(Color.menu.text.r, Color.menu.text.g, Color.menu.text.b, 0.20)
+            radius: Style.cornerRadius
+            TextInput {
+              id: hubHostInput
+              anchors.fill: parent
+              anchors.margins: Style.space(9)
+              color: Color.menu.text
+              font.family: Style.font.family
+              font.pixelSize: Style.font.body
+              clip: true
+              selectByMouse: true
+              Keys.onPressed: function(event) {
+                if (event.key === Qt.Key_Escape) {
+                  root.cancelHub(); root.visible = false; event.accepted = true
+                } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                  root.commitHub(); event.accepted = true
+                }
+              }
+              Text {
+                anchors.fill: parent
+                visible: !parent.text && !parent.activeFocus
+                text: "hub address"
+                color: Qt.rgba(Color.menu.text.r, Color.menu.text.g, Color.menu.text.b, 0.42)
+                font: parent.font
+              }
+            }
+          }
+          Rectangle {
+            id: hubPortInputBox
+            width: Style.space(100)
+            height: Style.space(38)
+            color: Qt.rgba(Color.menu.text.r, Color.menu.text.g, Color.menu.text.b, 0.05)
+            border.color: Qt.rgba(Color.menu.text.r, Color.menu.text.g, Color.menu.text.b, 0.20)
+            radius: Style.cornerRadius
+            TextInput {
+              id: hubPortInput
+              anchors.fill: parent
+              anchors.margins: Style.space(9)
+              color: Color.menu.text
+              font.family: Style.font.family
+              font.pixelSize: Style.font.body
+              inputMethodHints: Qt.ImhDigitsOnly
+              validator: IntValidator { bottom: 1; top: 65535 }
+              clip: true
+              selectByMouse: true
+              Keys.onPressed: function(event) {
+                if (event.key === Qt.Key_Escape) {
+                  root.cancelHub(); root.visible = false; event.accepted = true
+                } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                  root.commitHub(); event.accepted = true
+                }
+              }
+              Text {
+                anchors.fill: parent
+                visible: !parent.text && !parent.activeFocus
+                text: "port"
+                color: Qt.rgba(Color.menu.text.r, Color.menu.text.g, Color.menu.text.b, 0.42)
+                font: parent.font
+              }
+            }
           }
         }
       }

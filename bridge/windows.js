@@ -139,7 +139,7 @@ async function search(message) {
     ...window,
     context: await enrichWindow(window, children),
   })));
-  const rows = enriched.flatMap((window) => {
+  const allRows = enriched.flatMap((window) => {
     const address = String(window.address || "");
     const stableId = String(window.stableId || "");
     const originalTitle = String(window.title || "").trim();
@@ -158,8 +158,9 @@ async function search(message) {
       workspace: String(window.workspace?.name || window.workspace?.id || ""),
       score,
     }];
-  }).sort((a, b) => a.score - b.score || a.title.localeCompare(b.title)).slice(0, 40);
-  emit({ id: message.id, rows });
+  }).sort((a, b) => a.score - b.score || a.title.localeCompare(b.title));
+  const rows = allRows.slice(0, 40);
+  emit({ id: message.id, rows, totalMatched: allRows.length, capped: allRows.length > rows.length });
 }
 
 async function focus(message) {

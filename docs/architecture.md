@@ -38,6 +38,9 @@ Omarchy Shell
    consults this property before deciding whether its toggle should summon or
    hide the plugin. Do not redefine it to include pinned windows: doing so
    recreates the post-pin double-hotkey bug.
+   A pending request to open an overlay also counts as opened while shortcut
+   support initializes. A second toggle cancels that request without creating
+   a conversation or bridge. Pinned windows still do not count as opened.
 5. Summoning Ask while pinned conversations exist creates a new conversation.
 6. Closing an overlay or normal window shuts down and destroys only its owning
    conversation. `closeAll()` exists as an explicit maintenance/test hook; the
@@ -94,6 +97,21 @@ scrolls. Do not reset the anchor when a reply finishes: collapsing the room
 would jump the transcript.
 
 The input's `>` is visual chrome and is never included in the submitted text.
+
+## File and repository search
+
+`bridge/files.js` is the JSON-lines adapter for a generation-owned streaming
+coordinator. Filesystem partitions have independent bounded scan capacity;
+native FFF and plocate run as isolated optional accelerators. Every snapshot
+merges observed results rather than choosing one source's result exclusively.
+The configured scope still includes mounted subtrees. Failed or timed-out
+sources retain already received complete records and report incompleteness.
+
+Search results use path identity across streaming updates. A single known
+uncapped result is a direct item, not a one-item bucket. Highlight, preview and
+activation must retain that item's identity through reordering, and clear if
+it disappears. See the full [file-search contract](architecture-file-search.md)
+for source ownership, ranking, resource limits and acceptance requirements.
 
 ## Durable state and privacy
 

@@ -1,4 +1,5 @@
 import QtQuick
+import "ShortcutPolicy.js" as ShortcutPolicy
 import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
@@ -18,11 +19,34 @@ Item {
   property bool bridgeReady: false
   property bool steeringSupported: false
   property bool steeringPending: false
+  property bool imagePromptSupported: false
+  property bool imageAttachmentsLocked: false
+  property var imageAttachments: []
+  // A submitted image prompt owns its text and bytes independently of the
+  // editable composer. Failed originals never become the next draft implicitly.
+  property var activeImageDraft: null
+  property var failedImageDrafts: []
+  property int imageDraftSequence: 0
+  property var queuedImages: []
+  property int imageAttachmentSequence: 0
+  property int clipboardSequence: 0
+  property int pendingClipboardId: -1
+  property bool clipboardRequestedWhileWaiting: false
+  readonly property var imagePastePolicy: ({
+    mimeTypes: ["image/png", "image/jpeg", "image/gif", "image/webp"],
+    maxImageBytes: 5 * 1024 * 1024,
+    maxTotalBytes: 20 * 1024 * 1024
+  })
   property bool composerTailPinned: false
   property bool resultsRevealPending: false
   property bool outsideDismissArmed: false
   property bool sessionLost: false
   property bool pinned: false
+  property bool pinPending: false
+  property int pinPrepareAttempts: 0
+  readonly property var bridgeProcessId: agent.processId
+  readonly property bool shortcutReady: pinned ? pinnedScope.ready : panelScope.ready
+  readonly property bool shortcutFocused: pinned ? pinnedScope.focused : panelScope.focused
   property string windowTitle: "Omarchy Ask"
   property string statusText: ""
   property int activeReply: -1
@@ -41,12 +65,14 @@ Item {
   signal fontScaleResetRequested()
   signal motionTunerRequested()
   signal harnessSelectorRequested()
+  signal agentRequested(string id)
   signal sessionRestartRequested()
   property real keyboardLineImpulse: 335
   property real keyboardPageImpulse: 689
   property real keyboardDeceleration: 608
   property var fileOpenCommand: []
   property var fileEditCommand: []
+  property var agentRows: []
   property bool motionTunerOpen: false
   property bool harnessSelectorOpen: false
   property string agentName: ""
@@ -57,6 +83,12 @@ Item {
   property string fileBrowserMode: "files"
   property string fileBrowserQuery: ""
   property int fileBrowserIndex: 0
+  // Search results stream and reorder. Keep the selected item's path identity
+  // separately from its transient list index so Return/preview cannot switch
+  // to a newly inserted row at the same index.
+  property string fileSelectionIdentity: ""
+  property bool fileSelectionRemoved: false
+  property string menuSelectionIdentity: ""
   property int fileShortcutFirst: -1
   property int fileShortcutLast: -1
   property string lastVisibleShortcut: ""
@@ -69,23 +101,102 @@ Item {
   readonly property var fileBrowserRows: fileBrowserMode === "repos"
     ? menuSearch.repoRows
     : menuSearch.fileRows
+  // Follow the selected file, not the search prefix. This also updates when
+  // asynchronous results replace the row at an unchanged selection index.
+  readonly property string selectedFilePreviewPath: {
+    if (!root.opened) return ""
+    if (root.fileBrowserOpen) {
+      if (root.fileBrowserMode !== "files" || root.fileBrowserIndex < 0
+          || root.fileBrowserIndex >= root.fileBrowserRows.length) return ""
+      var focusedFile = root.fileBrowserRows[root.fileBrowserIndex]
+      return String(focusedFile.absolutePath || focusedFile.path || "")
+    }
+    if (!root.menuOpen || root.menuIndex < 0
+        || root.menuIndex >= menuSearch.rows.length) return ""
+    var row = menuSearch.rows[root.menuIndex]
+    return row && row.isPath && !row.isRepository && !row.isAggregate
+      ? String(row.absolutePath || "") : ""
+  }
+  onSelectedFilePreviewPathChanged: {
+    if (selectedFilePreviewPath !== "") scheduleFilePreview(selectedFilePreviewPath)
+    else closeFilePreview()
+  }
+  onFileBrowserRowsChanged: remapFileSelection()
   onFileBrowserIndexChanged: {
-    if (!fileBrowserOpen || fileBrowserMode !== "files") return
-    if (fileBrowserIndex < 0 || fileBrowserIndex >= fileBrowserRows.length) return
-    scheduleFilePreview(fileBrowserRows[fileBrowserIndex].path)
+    if (fileBrowserIndex >= 0 && fileBrowserIndex < fileBrowserRows.length) {
+      fileSelectionRemoved = false
+      fileSelectionIdentity = rowIdentity(fileBrowserRows[fileBrowserIndex])
+    } else if (fileBrowserIndex < 0) fileSelectionIdentity = ""
+  }
+  onFileBrowserQueryChanged: {
+    fileSelectionRemoved = false
+    fileSelectionIdentity = ""
+    fileBrowserIndex = -1
   }
   onMenuIndexChanged: {
-    if (root.searchMode !== "@" || menuIndex < 0
-        || menuIndex >= menuSearch.rows.length) {
-      if (!root.fileBrowserOpen) closeFilePreview()
+    if (menuIndex >= 0 && menuIndex < menuSearch.rows.length)
+      menuSelectionIdentity = rowIdentity(menuSearch.rows[menuIndex])
+    else if (menuIndex < 0) menuSelectionIdentity = ""
+  }
+
+  function rowIdentity(row) {
+    if (!row) return ""
+    if (row.isPath || (row.name !== undefined && row.path !== undefined))
+      return "path:" + String(row.absolutePath || row.path || "")
+    if (row.isWindow) return "window:" + String(row.stableId || row.id || "")
+    if (row.isAgent) return "agent:" + String(row.agentId || row.id || "")
+    if (row.isApp) return "app:" + String(row.appId || row.id || "")
+    return String(row.id || "")
+  }
+
+  function remapFileSelection() {
+    var rows = fileBrowserRows || []
+    if (rows.length === 0) {
+      // An empty in-flight snapshot is provisional; a completed empty search
+      // means the selected path really disappeared and must clear Return and
+      // preview together.
+      var complete = root.fileBrowserMode === "repos"
+        ? menuSearch.repoMatchComplete : menuSearch.fileMatchComplete
+      if (complete) {
+        fileSelectionRemoved = fileSelectionRemoved || fileSelectionIdentity !== ""
+        fileSelectionIdentity = ""
+        fileBrowserIndex = -1
+      }
       return
     }
-    var row = menuSearch.rows[menuIndex]
-    if (row && row.isPath && !row.isRepository)
-      scheduleFilePreview(row.absolutePath)
-    else if (!root.fileBrowserOpen) closeFilePreview()
+    if (fileSelectionIdentity === "") {
+      // Once a selected identity disappears, later snapshots for the same
+      // query must not silently make an unrelated row the Return target.
+      if (fileSelectionRemoved) return
+      if (fileBrowserIndex < 0 || fileBrowserIndex >= rows.length) fileBrowserIndex = 0
+      if (fileBrowserIndex >= 0 && fileBrowserIndex < rows.length)
+        fileSelectionIdentity = rowIdentity(rows[fileBrowserIndex])
+      return
+    }
+    for (var i = 0; i < rows.length; i++) {
+      if (rowIdentity(rows[i]) !== fileSelectionIdentity) continue
+      if (fileBrowserIndex !== i) fileBrowserIndex = i
+      return
+    }
+    fileSelectionRemoved = true
+    fileSelectionIdentity = ""
+    fileBrowserIndex = -1
   }
-  onSearchModeChanged: if (searchMode !== "@" && !fileBrowserOpen) closeFilePreview()
+
+  function remapMenuSelection() {
+    var rows = menuSearch.rows || []
+    if (menuSelectionIdentity === "") {
+      if (menuIndex >= rows.length) menuIndex = -1
+      return
+    }
+    for (var i = 0; i < rows.length; i++) {
+      if (rowIdentity(rows[i]) !== menuSelectionIdentity) continue
+      if (menuIndex !== i) menuIndex = i
+      return
+    }
+    menuSelectionIdentity = ""
+    menuIndex = -1
+  }
   onMotionTunerOpenChanged: {
     if (!motionTunerOpen && opened && !pinned)
       Qt.callLater(function() { prompt.forceActiveFocus() })
@@ -200,6 +311,9 @@ Item {
   }
 
   function close() {
+    // Invalidate before stopping the bridge: its last clipboard response may
+    // already be queued. Pinning never changes this conversation's ownership.
+    pendingClipboardId = -1
     outsideDismissTimer.stop()
     outsideDismissArmed = false
     closeFilePreview()
@@ -214,11 +328,17 @@ Item {
     veil.opacity = 0
     layoutReady = false
     opened = false
+    pinPending = false
     pinned = false
     waiting = false
     bridgeReady = false
     steeringSupported = false
     steeringPending = false
+    imagePromptSupported = false
+    clearImageAttachments()
+    activeImageDraft = null
+    failedImageDrafts = []
+    queuedImages = []
     sessionLost = false
     queuedPrompt = ""
     clearPermissions()
@@ -231,6 +351,140 @@ Item {
     prompt.text = ""
     messages.clear()
     closed()
+  }
+
+  function addImageAttachments(images) {
+    var next = imageAttachments.slice()
+    for (var i = 0; i < images.length; i++) {
+      var image = images[i] || {}
+      imageAttachmentSequence++
+      next.push({
+        id: imageAttachmentSequence,
+        name: String(image.name || "Pasted image"),
+        mimeType: String(image.mimeType || ""),
+        size: Number(image.size || 0),
+        data: String(image.data || "")
+      })
+    }
+    imageAttachments = next
+    searchMode = ""
+    menuIndex = -1
+  }
+
+  function pasteClipboard() {
+    if (!opened || pendingClipboardId !== -1) return
+    if (!agent.running) {
+      statusText = "Start an agent session before pasting an image."
+      prompt.paste()
+      return
+    }
+    pendingClipboardId = ++clipboardSequence
+    clipboardRequestedWhileWaiting = waiting
+    agent.write(JSON.stringify({
+      type: "read_clipboard", requestId: pendingClipboardId,
+      policy: imagePastePolicy
+    }) + "\n")
+  }
+
+  function receiveClipboard(event) {
+    if (!opened || event.requestId !== pendingClipboardId) return
+    pendingClipboardId = -1
+    if (event.type === "clipboard_error") {
+      statusText = String(event.message || "Could not read the clipboard.")
+    } else if (event.kind === "text") {
+      if (waiting && !steeringSupported) return
+      // Use the current selection, as normal text paste does. Clipboard reads
+      // never restore an old snapshot over text typed while the read ran.
+      var start = prompt.selectionStart
+      prompt.remove(start, prompt.selectionEnd)
+      prompt.insert(start, String(event.text || ""))
+    } else if (event.kind === "images") {
+      if (waiting || clipboardRequestedWhileWaiting) {
+        statusText = "Wait for the reply to finish before pasting another image."
+        return
+      }
+      var images = event.images || []
+      var total = 0
+      for (var i = 0; i < imageAttachments.length; i++) total += imageAttachments[i].size
+      for (var j = 0; j < images.length; j++) total += images[j].size
+      // Account at attachment time, where the draft and read result meet.
+      if (total > imagePastePolicy.maxTotalBytes) {
+        statusText = "These images total more than 20 MiB."
+        return
+      }
+      addImageAttachments(images)
+      statusText = ""
+    }
+  }
+
+  function removeImageAttachment(index) {
+    if (imageAttachmentsLocked || index < 0 || index >= imageAttachments.length) return
+    var next = imageAttachments.slice()
+    next.splice(index, 1)
+    imageAttachments = next
+  }
+
+  function clearImageAttachments() {
+    imageAttachmentsLocked = false
+    imageAttachments = []
+  }
+
+  function finishImagePrompt(success) {
+    queuedPrompt = ""
+    queuedImages = []
+    var original = activeImageDraft
+    activeImageDraft = null
+    if (!original || success) return
+    if (prompt.text === "" && imageAttachments.length === 0) {
+      imageAttachments = original.images
+      prompt.text = original.text
+      prompt.cursorPosition = prompt.length
+    } else {
+      failedImageDrafts = failedImageDrafts.concat([original])
+    }
+  }
+
+  function retryOriginal(id) {
+    if (waiting || sessionLost || !bridgeReady || !agent.running) return
+    for (var i = 0; i < failedImageDrafts.length; i++) {
+      var original = failedImageDrafts[i]
+      if (original.id !== id) continue
+      var next = failedImageDrafts.slice()
+      next.splice(i, 1)
+      failedImageDrafts = next
+      activeImageDraft = original
+      startPrompt(original.text, original.images, false)
+      return
+    }
+  }
+
+  readonly property var imageGroups: {
+    var groups = failedImageDrafts.map(function(original) {
+      return { kind: "failed", draft: original, images: original.images, locked: false }
+    })
+    if (activeImageDraft)
+      groups.push({ kind: "submitted", draft: activeImageDraft,
+        images: activeImageDraft.images, locked: true })
+    if (imageAttachments.length > 0)
+      groups.push({ kind: "draft", draft: null, images: imageAttachments, locked: false })
+    return groups
+  }
+  readonly property bool hasImageAttachments: imageGroups.some(function(group) {
+    return group.images.length > 0
+  })
+
+  function removeGroupImage(group, index) {
+    if (group.locked) return
+    if (group.kind === "draft") { removeImageAttachment(index); return }
+    var next = failedImageDrafts.slice()
+    for (var i = 0; i < next.length; i++) {
+      if (next[i].id !== group.draft.id) continue
+      var images = next[i].images.slice()
+      images.splice(index, 1)
+      next[i] = { id: next[i].id, text: next[i].text, images: images }
+      failedImageDrafts = next
+      return
+    }
   }
 
   function noteKeyboardActivity() {
@@ -252,9 +506,53 @@ Item {
   function toggle() { opened ? close() : open("{}") }
 
   function pinConversation() {
-    if (!opened || pinned) return
+    if (!opened || pinned || pinPending) return
+    pinPrepareAttempts = 0
+    pinPending = true
+  }
+
+  function finishPinAttempt(acknowledged) {
+    if (!opened || !pinPending || pinned) return
+    if (!acknowledged && pinPrepareAttempts < 5) return
     pinned = true
-    Qt.callLater(function() { prompt.forceActiveFocus() })
+    Qt.callLater(function() {
+      if (root.fileBrowserOpen) filePrompt.forceActiveFocus()
+      else prompt.forceActiveFocus()
+    })
+  }
+
+  Timer {
+    interval: 20
+    repeat: true
+    triggeredOnStart: true
+    running: root.opened && root.pinPending && !root.pinned
+    onTriggered: {
+      if (pinPrepare.running) return
+      root.pinPrepareAttempts++
+      if (panelScope.instance === "") { root.finishPinAttempt(false); return }
+      pinPrepare.awaitingReply = true
+      pinPrepare.running = true
+    }
+  }
+  Process {
+    id: pinPrepare
+    property bool awaitingReply: false
+    command: ["hyprctl", "-i", panelScope.instance, "askshortcuts", "focus-ready", String(Quickshell.processId), "omarchy-ask"]
+    stdout: StdioCollector {}
+    onExited: function(exitCode) {
+      awaitingReply = false
+      // Missing-module fallback still permits pinning; it must not strand the
+      // conversation in an exclusive layer when the dependency is unavailable.
+      root.finishPinAttempt(exitCode === 0 && String(stdout.text).trim() === "ok")
+    }
+    onRunningChanged: {
+      if (!running && awaitingReply) Qt.callLater(function() {
+        if (!pinPrepare.running && pinPrepare.awaitingReply) {
+          pinPrepare.awaitingReply = false
+          root.finishPinAttempt(false)
+        }
+      })
+    }
   }
 
   function scrollToEnd() {
@@ -488,8 +786,17 @@ Item {
   property real menuMouseY: -1
   // Search is a peer of the agent session, not a phase of it. In particular,
   // a steerable composer must keep offering matches while output streams.
-  readonly property bool menuOpen: menuSearch.hasResults
+  readonly property bool menuOpen: !hasImageAttachments && menuSearch.hasResults
   readonly property bool menuSelected: root.menuOpen && root.menuIndex >= 0
+  // Aggregate Apps/Agents results keep the ordinary composer text but still
+  // own the same keyboard and submission semantics as @/^/% searches.
+  readonly property bool searchScopeActive: root.searchMode !== ""
+    || menuSearch.focusedBucket !== ""
+
+  function clearSearchScope() {
+    root.searchMode = ""
+    menuSearch.focusedBucket = ""
+  }
 
   function menuMove(delta) {
     if (!root.menuOpen) return false
@@ -596,8 +903,8 @@ Item {
     if (!root.menuSelected) return false
     if (!menuSearch.run(root.menuIndex, modifiers || Qt.NoModifier)) return false
     if (menuSearch.lastRunKeepsOpen) return true
+    root.clearSearchScope()
     prompt.text = ""
-    root.searchMode = ""
     root.menuIndex = -1
     // Running a row is the whole errand: the overlay is ephemeral and has
     // nothing left to show, so it gets out of the way of whatever just
@@ -608,8 +915,12 @@ Item {
   }
 
   function enterSearchMode(mode, query) {
-    root.searchMode = mode === "repos" ? "^" : (mode === "windows" ? "%" : "@")
-    prompt.text = String(query || "").replace(/^[@^%]/, "").trim()
+    var nextMode = mode === "repos" ? "^"
+      : (mode === "windows" ? "%"
+      : (mode === "agents" ? "&" : (mode === "apps" ? "" : "@")))
+    menuSearch.focusedBucket = mode === "apps" ? mode : ""
+    root.searchMode = nextMode
+    prompt.text = String(query || "").replace(/^[@^%&]/, "").trim()
     prompt.cursorPosition = prompt.length
     root.menuIndex = -1
     prompt.forceActiveFocus()
@@ -669,8 +980,13 @@ Item {
     cardFade.stop()
     card.opacity = 0
     fileBrowserMode = mode === "repos" ? "repos" : "files"
+    fileSelectionRemoved = false
+    fileSelectionIdentity = ""
     fileBrowserQuery = String(query || "").replace(/^[@^]/, "").trim()
-    fileBrowserIndex = 0
+    // Selection begins when the first snapshot for this browser query arrives;
+    // retaining index 0 here could capture a row from the previous query just
+    // before MenuSearch clears it.
+    fileBrowserIndex = -1
     fileBrowserOpen = true
     Qt.callLater(function() {
       root.updateFileShortcutRange()
@@ -691,22 +1007,24 @@ Item {
   }
 
   function scheduleFilePreview(path) {
-    if (root.fileBrowserOpen ? root.fileBrowserMode !== "files"
-        : root.searchMode !== "@") return
-    root.filePreviewVisible = false
-    root.filePreviewThumbnail = ""
-    root.filePreviewText = ""
-    root.hoverPreviewPath = String(path || "")
+    var nextPath = String(path || "")
+    if (nextPath === "" || nextPath !== root.selectedFilePreviewPath) return
+    if (root.hoverPreviewPath === nextPath) return
+    closeFilePreview()
+    root.hoverPreviewPath = nextPath
     filePreviewTimer.restart()
   }
 
   function cancelFilePreview(path) {
+    // Leaving a row does not deselect it; keyboard and mouse selection share
+    // one preview lifetime.
+    if (String(path || "") === root.selectedFilePreviewPath) return
     if (String(path || "") !== root.hoverPreviewPath) return
-    filePreviewTimer.stop()
-    root.hoverPreviewPath = ""
+    closeFilePreview()
   }
 
   function closeFilePreview() {
+    root.filePreviewRequestId++
     filePreviewTimer.stop()
     filePreviewProc.running = false
     root.hoverPreviewPath = ""
@@ -774,7 +1092,7 @@ Item {
   function openFileBrowserSelection(modifiers) {
     var rows = root.fileBrowserRows
     if (fileBrowserIndex < 0 || fileBrowserIndex >= rows.length) return
-    var path = String(rows[fileBrowserIndex].path || "")
+    var path = String(rows[fileBrowserIndex].absolutePath || rows[fileBrowserIndex].path || "")
     root.openPath(path, root.fileBrowserMode === "repos", modifiers)
   }
 
@@ -937,22 +1255,28 @@ Item {
 
   MenuSearch {
     id: menuSearch
-    query: root.searchMode + prompt.text
+    query: root.hasImageAttachments ? "" : root.searchMode + prompt.text
     appLibrary: root.appLibrary
+    agentRows: root.agentRows
     debounceMs: root.searchDebounceMs
     fileMode: root.fileBrowserOpen && root.fileBrowserMode === "files"
     repoMode: root.fileBrowserOpen && root.fileBrowserMode === "repos"
     fileQueryOverride: root.fileBrowserQuery
     onQueryChanged: {
       root.armIncomingResultsReveal()
+      root.menuSelectionIdentity = ""
       root.menuIndex = -1
       root.menuMouseArmed = false
     }
-    onRowsChanged: root.revealIncomingResults()
+    onRowsChanged: {
+      root.remapMenuSelection()
+      root.revealIncomingResults()
+    }
     onBrowseRequested: function(mode, query) { root.enterSearchMode(mode, query) }
     onPathActionRequested: function(path, repository, verb) {
       root.openPathAction(path, repository, verb)
     }
+    onAgentRequested: function(id) { root.agentRequested(id) }
   }
 
   function handleFontKey(event) {
@@ -1054,6 +1378,11 @@ Item {
     Shortcut { sequence: "Ctrl+-"; onActivated: conversation.stepFontScale(-0.1) }
     Shortcut { sequence: "Ctrl+0"; enabled: !conversation.menuOpen && !conversation.fileBrowserOpen; onActivated: conversation.resetFontScale() }
     Shortcut { sequence: "Ctrl+P"; onActivated: conversation.pinConversation() }
+    Shortcut {
+      sequence: "Ctrl+V"
+      enabled: conversation.waiting && !conversation.steeringSupported
+      onActivated: conversation.pasteClipboard()
+    }
     Shortcut { sequence: "Ctrl+,"; onActivated: conversation.motionTunerRequested() }
     Shortcut { sequence: "Meta+,"; onActivated: conversation.harnessSelectorRequested() }
     Shortcut { sequence: "Ctrl+1"; enabled: conversation.menuOpen || conversation.fileBrowserOpen; onActivated: conversation.selectVisibleSlot(0) }
@@ -1070,8 +1399,9 @@ Item {
 
   function submit() {
     var text = prompt.text.trim()
-    if (text === "" || sessionLost) return
+    if (sessionLost) return
     if (waiting) {
+      if (text === "") return
       if (!steeringSupported || steeringPending || !bridgeReady || !agent.running) return
       steeringPending = true
       statusText = "Steering…"
@@ -1084,14 +1414,25 @@ Item {
       Qt.callLater(root.scrollToEnd)
       return
     }
+    var images = imageAttachments.slice()
+    if (text === "" && images.length === 0) return
+    if (images.length > 0) {
+      activeImageDraft = { id: ++imageDraftSequence, text: prompt.text, images: images }
+      imageAttachments = []
+    }
+    startPrompt(text, images, true)
+  }
+
+  function startPrompt(text, images, clearComposer) {
     // Someone who scrolled up to read history keeps their position; only a
     // reader already at the tail gets pulled to the new prompt.
     var followTail = isAtEnd()
     waiting = true
     statusText = "Thinking…"
     queuedPrompt = text
-    prompt.text = ""
-    messages.append({ role: "You", body: text })
+    queuedImages = images
+    if (clearComposer) prompt.text = ""
+    messages.append({ role: "You", body: text || "Image attached" })
     var promptIndex = messages.count - 1
     activeReply = messages.count
     activeReplyMessageId = ""
@@ -1102,12 +1443,14 @@ Item {
   }
 
   function sendQueuedPrompt() {
-    if (queuedPrompt === "" || !agent.running || !bridgeReady) return
+    if ((queuedPrompt === "" && queuedImages.length === 0) || !agent.running || !bridgeReady) return
     agent.write(JSON.stringify({
       type: "prompt",
-      text: queuedPrompt
+      text: queuedPrompt,
+      images: queuedImages
     }) + "\n")
     queuedPrompt = ""
+    queuedImages = []
   }
 
   function setPermissionMode(mode) {
@@ -1163,13 +1506,17 @@ Item {
   }
 
   function handleAgentLine(rawLine) {
+    if (!opened) return
     var line = String(rawLine || "").trim()
     if (line === "") return
     try {
       var event = JSON.parse(line)
-      if (event.type === "ready") {
+      if (event.type === "clipboard" || event.type === "clipboard_error") {
+        receiveClipboard(event)
+      } else if (event.type === "ready") {
         bridgeReady = true
         steeringSupported = event.steeringSupported === true
+        imagePromptSupported = event.imagePromptSupported === true
         permissionMode = event.permissionMode === "yolo" ? "yolo" : "permission"
         statusText = queuedPrompt === "" ? "" : "Thinking…"
         sendQueuedPrompt()
@@ -1177,9 +1524,13 @@ Item {
         appendReply(String(event.text || ""), String(event.messageId || ""))
         statusText = "Replying…"
       } else if (event.type === "done") {
+        var incompleteImageReply = activeImageDraft && event.stopReason
+          && event.stopReason !== "end_turn"
+        finishImagePrompt(!incompleteImageReply)
         waiting = false
         steeringPending = false
-        statusText = ""
+        statusText = incompleteImageReply
+          ? "Reply stopped (" + event.stopReason + "). The original draft is retained." : ""
         activeReply = -1
         activeReplyMessageId = ""
         clearPermissions()
@@ -1215,6 +1566,7 @@ Item {
         permissionModePending = false
         statusText = String(event.message || "Could not change permission mode")
       } else if (event.type === "error") {
+        finishImagePrompt(false)
         clearPermissions()
         waiting = false
         steeringPending = false
@@ -1223,6 +1575,7 @@ Item {
         statusText = String(event.message || "Agent error")
         Qt.callLater(function() { prompt.forceActiveFocus() })
       } else if (event.type === "fatal") {
+        finishImagePrompt(false)
         clearPermissions()
         bridgeReady = false
         sessionLost = true
@@ -1240,6 +1593,7 @@ Item {
     sessionRestartRequested()
     sessionLost = false
     queuedPrompt = ""
+    queuedImages = []
     steeringSupported = false
     steeringPending = false
     statusText = "Starting agent…"
@@ -1256,6 +1610,15 @@ Item {
     }) + "\n")
     showNextPermission()
     statusText = allow ? "Working…" : "Tool denied"
+  }
+
+  // Editable fields claim printable keys before a window Shortcut can see
+  // them (including when steering remains enabled during a permission).
+  function handlePermissionKey(event) {
+    if (pendingPermissionId === "" || event.modifiers !== Qt.NoModifier) return false
+    if (event.key !== Qt.Key_Y && event.key !== Qt.Key_N) return false
+    answerPermission(event.key === Qt.Key_Y)
+    return true
   }
 
   ListModel { id: messages }
@@ -1280,12 +1643,14 @@ Item {
     command: root.bridgeCommand
     stdinEnabled: true
     onExited: function(code) {
+      root.pendingClipboardId = -1
       root.clearPermissions()
       root.bridgeReady = false
       if (!root.opened) return
       // A fatal bridge event carries the useful launch/session error. Do not
       // replace it with the generic process-exit fallback a moment later.
       if (root.sessionLost) return
+      root.finishImagePrompt(false)
       root.waiting = false
       root.activeReply = -1
       root.sessionLost = true
@@ -1302,17 +1667,29 @@ Item {
 
   PanelWindow {
     id: panel
-    visible: root.opened && !root.pinned
+    visible: root.opened && (!root.pinned || root.pinPending)
     anchors { top: true; bottom: true; left: true; right: true }
     color: "transparent"
     WlrLayershell.namespace: "omarchy-ask"
     WlrLayershell.layer: WlrLayer.Overlay
-    // Let the auxiliary motion window become active without dismissing this
-    // layer popup, then reclaim exclusive prompt focus when it closes.
-    WlrLayershell.keyboardFocus: root.motionTunerOpen || root.harnessSelectorOpen
-      ? WlrKeyboardFocus.OnDemand
-      : WlrKeyboardFocus.Exclusive
+    WlrLayershell.keyboardFocus: root.pinPending ? WlrKeyboardFocus.Exclusive : panelFocus.mode
+    ShortcutFocus {
+      id: panelFocus
+      targetWindow: panel
+      wanted: !root.motionTunerOpen && !root.harnessSelectorOpen
+      allowed: panelScope.admitted
+    }
     exclusionMode: ExclusionMode.Ignore
+
+    ShortcutScope {
+      id: panelScope
+      targetWindow: panel
+      surfaceName: "omarchy-ask"
+      chords: ShortcutPolicy.conversation({ menu: root.menuOpen, files: root.fileBrowserOpen,
+        composer: (prompt.focus || (!panelScope.focusEstablished && !root.fileBrowserOpen)) && prompt.enabled, permission: root.pendingPermissionId !== "",
+        searchMode: root.searchScopeActive, emptyPrompt: prompt.text.length === 0,
+        overlay: true, menuSelected: root.menuSelected })
+    }
 
     // While browsing files, only the Ask card itself accepts pointer input.
     // The rest of this transparent full-screen layer must be click-through so
@@ -1591,7 +1968,7 @@ Item {
                 selectionColor: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.32)
                 selectedTextColor: root.foreground
                 Keys.onPressed: function(event) {
-                  if (root.handleFontKey(event) || root.handlePinKey(event) || root.handleMotionTunerKey(event) || root.handleHarnessSelectorKey(event) || root.handleScrollKey(event)) event.accepted = true
+                  if (root.handlePermissionKey(event) || root.handleFontKey(event) || root.handlePinKey(event) || root.handleMotionTunerKey(event) || root.handleHarnessSelectorKey(event) || root.handleScrollKey(event)) event.accepted = true
                 }
               }
               TextEdit {
@@ -1611,7 +1988,7 @@ Item {
                 selectedTextColor: root.foreground
                 onLinkActivated: function(link) { Qt.openUrlExternally(link) }
                 Keys.onPressed: function(event) {
-                  if (root.handleFontKey(event) || root.handlePinKey(event) || root.handleMotionTunerKey(event) || root.handleHarnessSelectorKey(event) || root.handleScrollKey(event)) event.accepted = true
+                  if (root.handlePermissionKey(event) || root.handleFontKey(event) || root.handlePinKey(event) || root.handleMotionTunerKey(event) || root.handleHarnessSelectorKey(event) || root.handleScrollKey(event)) event.accepted = true
                 }
               }
             }
@@ -1675,6 +2052,94 @@ Item {
             }
           }
 
+          Repeater {
+            model: root.imageGroups
+            delegate: Column {
+              id: imageGroup
+              required property var modelData
+              width: stack.width
+              spacing: Style.space(6)
+              Text {
+                visible: imageGroup.modelData.kind !== "draft"
+                width: parent.width
+                text: (imageGroup.modelData.kind === "failed" ? "Failed original: " : "Submitted: ")
+                  + (imageGroup.modelData.draft ? imageGroup.modelData.draft.text : "")
+                color: root.foreground
+                font.pixelSize: root.agentSize
+                wrapMode: Text.Wrap
+                textFormat: Text.PlainText
+              }
+              Button {
+                visible: imageGroup.modelData.kind === "failed"
+                text: "Retry original"
+                enabled: !root.waiting && !root.sessionLost && root.bridgeReady && agent.running
+                onClicked: root.retryOriginal(imageGroup.modelData.draft.id)
+              }
+              ListView {
+            id: imageAttachmentStrip
+            width: stack.width
+            visible: imageGroup.modelData.images.length > 0
+            height: visible ? Style.space(66) : 0
+            spacing: Style.space(8)
+            orientation: ListView.Horizontal
+            boundsBehavior: Flickable.StopAtBounds
+            clip: true
+            model: imageGroup.modelData.images
+
+            delegate: Rectangle {
+                required property var modelData
+                required property int index
+                width: Style.space(82)
+                height: Style.space(66)
+                radius: Style.space(5)
+                color: Qt.rgba(root.foreground.r, root.foreground.g,
+                  root.foreground.b, 0.08)
+                border.width: 1
+                border.color: Qt.rgba(root.foreground.r, root.foreground.g,
+                  root.foreground.b, 0.16)
+                opacity: imageGroup.modelData.locked ? 0.58 : 1
+                clip: true
+
+                Image {
+                  anchors.fill: parent
+                  anchors.margins: 1
+                  source: "data:" + modelData.mimeType + ";base64," + modelData.data
+                  sourceSize.width: Style.space(164)
+                  sourceSize.height: Style.space(132)
+                  fillMode: Image.PreserveAspectCrop
+                  cache: false
+                }
+
+                Rectangle {
+                  visible: !imageGroup.modelData.locked
+                  width: Style.space(22)
+                  height: width
+                  radius: width / 2
+                  anchors.top: parent.top
+                  anchors.right: parent.right
+                  anchors.margins: Style.space(4)
+                  color: Qt.rgba(root.background.r, root.background.g,
+                    root.background.b, 0.88)
+
+                  Text {
+                    anchors.centerIn: parent
+                    text: "×"
+                    color: root.foreground
+                    font.family: Style.font.family
+                    font.pixelSize: root.agentSize
+                  }
+
+                  MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.removeGroupImage(imageGroup.modelData, index)
+                  }
+                }
+            }
+              }
+            }
+          }
+
           Item {
             id: composer
             width: stack.width
@@ -1724,11 +2189,16 @@ Item {
                 else Qt.callLater(root.scrollToEnd)
               }
               onTextChanged: {
-                if (!root.fileBrowserOpen && root.searchMode === "" && text.length > 0
-                    && "@^%".indexOf(text.charAt(0)) >= 0) {
-                  root.searchMode = text.charAt(0)
-                  text = text.slice(1)
-                  cursorPosition = length
+                if (!root.hasImageAttachments
+                    && !root.fileBrowserOpen && text.length > 0
+                    && "@^%&".indexOf(text.charAt(0)) >= 0) {
+                  if (root.searchMode === "") {
+                    if (menuSearch.focusedBucket !== "")
+                      menuSearch.focusedBucket = ""
+                    root.searchMode = text.charAt(0)
+                    text = text.slice(1)
+                    cursorPosition = length
+                  }
                 }
                 if (root.waiting && root.steeringSupported && activeFocus
                     && text.length > 0) {
@@ -1738,9 +2208,15 @@ Item {
               }
               Keys.onPressed: function(event) {
                 root.noteKeyboardActivity()
-                if (event.key === Qt.Key_Backspace && root.searchMode !== ""
+                if (root.handlePermissionKey(event)) { event.accepted = true; return }
+                if (event.key === Qt.Key_V && (event.modifiers & Qt.ControlModifier)) {
+                  root.pasteClipboard()
+                  event.accepted = true
+                  return
+                }
+                if (event.key === Qt.Key_Backspace && root.searchScopeActive
                     && text.length === 0) {
-                  root.searchMode = ""
+                  root.clearSearchScope()
                   root.menuIndex = -1
                   event.accepted = true
                   return
@@ -1798,10 +2274,10 @@ Item {
                 if (root.handleFontKey(event) || root.handlePinKey(event) || root.handleMotionTunerKey(event) || root.handleHarnessSelectorKey(event) || root.handleScrollKey(event, true)) {
                   event.accepted = true
                 } else if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
-                    && (root.searchMode !== ""
+                    && (root.searchScopeActive
                       || !(event.modifiers & Qt.ShiftModifier))) {
                   // A selection runs; no selection submits. Never inferred.
-                  if (!root.menuActivate(event.modifiers) && root.searchMode === "")
+                  if (!root.menuActivate(event.modifiers) && !root.searchScopeActive)
                     root.submit()
                   event.accepted = true
                 }
@@ -1812,7 +2288,7 @@ Item {
               id: promptMarker
               x: card.headerInset
               anchors.verticalCenter: prompt.verticalCenter
-              readonly property bool modeActive: root.searchMode !== ""
+              readonly property bool modeActive: root.searchScopeActive
               // A compact reversed badge: the glyph occupies only about half
               // the box, leaving enough fill around it to read as a mode chip
               // rather than another character in the prompt.
@@ -1830,7 +2306,9 @@ Item {
                 anchors.centerIn: parent
                 // The normal square becomes the routing sigil while a focused
                 // inline search mode owns the composer.
-                text: root.searchMode !== "" ? root.searchMode : "\u25AA"
+                text: root.searchMode !== "" ? root.searchMode
+                  : (menuSearch.focusedBucket === "apps" ? "A"
+                  : (menuSearch.focusedBucket === "agents" ? "&" : "\u25AA"))
                 color: parent.modeActive ? root.background : root.accent
                 font.family: Style.font.family
                 font.pixelSize: parent.modeActive
@@ -2023,6 +2501,7 @@ Item {
                   anchors.top: parent.top
                   visible: parent.workspaceHeaderHeight > 0
                   text: modelData.workspaceHeader || ""
+                  textFormat: Text.PlainText
                   color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.48)
                   font.family: Style.font.family
                   font.pixelSize: root.menuPathSize
@@ -2067,8 +2546,8 @@ Item {
 
                   Text {
                     anchors.centerIn: parent
-                    visible: !modelData.isApp && !parent.fileImage
-                    text: modelData.icon || ""
+                    visible: !parent.fileImage && (!modelData.isApp || !root.appLibrary)
+                    text: modelData.isApp && !root.appLibrary ? "󰀻" : (modelData.icon || "")
                     color: parent.parent.current ? root.accent : root.foreground
                     font.family: modelData.iconFont && modelData.iconFont.length > 0
                       ? modelData.iconFont
@@ -2077,7 +2556,7 @@ Item {
                   }
                   Image {
                     anchors.fill: parent
-                    visible: modelData.isApp || parent.fileImage
+                    visible: (modelData.isApp && root.appLibrary) || parent.fileImage
                     source: modelData.isApp && root.appLibrary
                       ? root.appLibrary.iconSource(modelData.appIcon)
                       : (parent.fileImage ? root.localFileUrl(modelData.absolutePath) : "")
@@ -2106,6 +2585,7 @@ Item {
                     id: rowTitle
                     width: parent.width
                     text: modelData.label
+                    textFormat: Text.PlainText
                     color: parent.parent.current ? root.accent : root.foreground
                     font.family: Style.font.family
                     font.pixelSize: root.menuTitleSize
@@ -2119,6 +2599,7 @@ Item {
                       width: Math.max(0, parent.width - inlineActionHint.width
                         - parent.spacing)
                       text: modelData.path
+                      textFormat: Text.PlainText
                       color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.45)
                       font.family: Style.font.family
                       font.pixelSize: root.menuPathSize
@@ -2129,6 +2610,7 @@ Item {
                       visible: Boolean(modelData.isPath) && parent.parent.parent.current
                       width: visible ? implicitWidth : 0
                       text: modelData.actionHint || ""
+                      textFormat: Text.PlainText
                       color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.72)
                       font.family: Style.font.family
                       font.pixelSize: root.menuPathSize
@@ -2151,6 +2633,7 @@ Item {
                     readonly property real answerRoom: mathAnswer.implicitWidth + mathText.spacing
                     width: Math.min(implicitWidth, Math.max(0, mathText.width - answerRoom))
                     text: modelData.isMath ? modelData.equation : ""
+                    textFormat: Text.PlainText
                     color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.45)
                     font.family: Style.font.family
                     font.pixelSize: root.menuTitleSize
@@ -2160,6 +2643,7 @@ Item {
                     id: mathAnswer
                     width: Math.min(implicitWidth, mathText.width)
                     text: modelData.isMath ? modelData.answer : ""
+                    textFormat: Text.PlainText
                     color: parent.parent.current ? root.accent : root.foreground
                     font.family: Style.font.family
                     font.pixelSize: root.menuTitleSize
@@ -2310,6 +2794,7 @@ Item {
             fileTrackpadCoast.stop()
           }
           Keys.onPressed: function(event) {
+            if (root.handlePermissionKey(event)) { event.accepted = true; return }
             if (root.handleVisibleSlotKey(event)) {
               event.accepted = true
               return
@@ -2464,9 +2949,8 @@ Item {
             id: filePreviewTimer
             interval: 500
             onTriggered: {
-              var previewingFiles = root.fileBrowserOpen
-                ? root.fileBrowserMode === "files" : root.searchMode === "@"
-              if (!previewingFiles || root.hoverPreviewPath === "") return
+              if (root.hoverPreviewPath === ""
+                  || root.hoverPreviewPath !== root.selectedFilePreviewPath) return
               root.filePreviewRequestId++
               filePreviewProc.running = false
               filePreviewProc.command = [
@@ -2547,6 +3031,7 @@ Item {
                   ? fileSlotHint.implicitWidth + Style.space(8) : 0)
                 )
                 text: modelData.name || ""
+                textFormat: Text.PlainText
                 color: index === root.fileBrowserIndex ? root.accent : root.foreground
                 font.family: Style.font.family
                 font.pixelSize: root.menuTitleSize
@@ -2558,6 +3043,7 @@ Item {
                 Text {
                   width: Math.max(0, parent.width - actionHint.width - parent.spacing)
                   text: modelData.relativePath || modelData.path || ""
+                  textFormat: Text.PlainText
                   color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.45)
                   font.family: Style.font.family
                   font.pixelSize: root.menuPathSize
@@ -2610,8 +3096,7 @@ Item {
       id: filePreviewCard
       parent: root.pinned ? pinnedWindow.contentItem : panel.contentItem
       visible: root.filePreviewVisible
-        && ((root.fileBrowserOpen && root.fileBrowserMode === "files")
-          || (!root.fileBrowserOpen && root.searchMode === "@"))
+        && root.selectedFilePreviewPath !== ""
       readonly property Item anchorCard: root.fileBrowserOpen ? fileCard : card
       readonly property Item anchorItem: root.fileBrowserOpen
         ? fileList.currentItem : inlineResults.currentItem
@@ -2844,6 +3329,23 @@ Item {
     id: pinnedWindow
     visible: root.opened && root.pinned
     title: root.windowTitle
+    ShortcutScope {
+      id: pinnedScope
+      targetWindow: pinnedWindow
+      surfaceName: root.windowTitle
+      onAdmittedChanged: {
+        if (!admitted || !root.pinned || !root.pinPending) return
+        root.pinPending = false
+        Qt.callLater(function() {
+          if (root.opened && root.pinned && pinnedScope.nativeWindow)
+            pinnedScope.nativeWindow.requestActivate()
+        })
+      }
+      chords: ShortcutPolicy.conversation({ menu: root.menuOpen, files: root.fileBrowserOpen,
+        composer: (prompt.focus || (!pinnedScope.focusEstablished && !root.fileBrowserOpen)) && prompt.enabled, permission: root.pendingPermissionId !== "",
+        searchMode: root.searchScopeActive, emptyPrompt: prompt.text.length === 0,
+        overlay: false, menuSelected: root.menuSelected })
+    }
     color: root.background
     implicitWidth: 760
     implicitHeight: 800

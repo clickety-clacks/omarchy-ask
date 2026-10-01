@@ -8,6 +8,7 @@ import { dirname, join } from "node:path";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolveHarness, resolveExecutable } from "./harness-policy.js";
 import { explainHarnessError, needsNewSession } from "./harness-errors.js";
+import { readClipboard } from "./image-paste.js";
 import {
   ClientSideConnection,
   PROTOCOL_VERSION,
@@ -166,7 +167,9 @@ let sessionId = null;
 let connection = null;
 let turnRunning = false;
 let steeringSupported = false;
+let imagePromptSupported = false;
 let shuttingDown = false;
+let clipboardAbortController = null;
 let childExitResolve;
 const childExited = new Promise((resolve) => { childExitResolve = resolve; });
 
@@ -232,6 +235,8 @@ async function start() {
     clientCapabilities: { session: { configOptions: {} } },
   });
   steeringSupported = initialized?._meta?.steering?.supported === true;
+  imagePromptSupported = initialized?.agentCapabilities
+    ?.promptCapabilities?.image === true;
   const session = await connection.newSession({ cwd, mcpServers: [],
     ...(agentName === "claude" && process.env.ASK_MODEL ? {
       _meta: { claudeCode: { options: {
@@ -248,19 +253,37 @@ async function start() {
     sessionId,
     capabilities: initialized.agentCapabilities || {},
     steeringSupported,
+    imagePromptSupported,
     permissionMode,
   });
 }
 
-async function prompt(text) {
+function promptContent(text, images) {
+  const content = [];
+  if (text) content.push({ type: "text", text });
+  for (const image of images || []) {
+    content.push({
+      type: "image",
+      data: String(image?.data || ""),
+      mimeType: String(image?.mimeType || ""),
+    });
+  }
+  return content;
+}
+
+async function prompt(text, images) {
   if (!connection || !sessionId) throw new Error("ACP session is not ready");
   if (turnRunning) throw new Error("The agent is already handling a prompt");
+  if (images?.length && !imagePromptSupported)
+    throw new Error("The current agent does not support image input");
+  const content = promptContent(text, images);
+  if (content.length === 0) throw new Error("The prompt is empty");
   turnRunning = true;
   emit({ type: "status", text: "Thinking…" });
   try {
     const response = await connection.prompt({
       sessionId,
-      prompt: [{ type: "text", text }],
+      prompt: content,
     });
     emit({ type: "done", stopReason: response.stopReason || "end_turn" });
   } finally {
@@ -308,6 +331,8 @@ function allowAllPendingPermissions() {
 async function shutdown() {
   if (shuttingDown) return;
   shuttingDown = true;
+  clipboardAbortController?.abort();
+  clipboardAbortController = null;
   for (const { resolve } of pendingPermissions.values()) {
     resolve({ outcome: { outcome: "cancelled" } });
   }
@@ -337,15 +362,33 @@ input.on("line", (line) => {
     return;
   }
   if (message.type === "prompt") {
-    prompt(String(message.text || "")).catch((error) => {
-      turnRunning = false;
-      const fatal = needsNewSession(error);
-      emit({ type: fatal ? "fatal" : "error", message: explainHarnessError(error, agentName) });
-      if (fatal) shutdown().finally(() => process.exit(1));
-    });
+    prompt(String(message.text || ""), Array.isArray(message.images) ? message.images : [])
+      .catch((error) => {
+        turnRunning = false;
+        const fatal = needsNewSession(error);
+        emit({ type: fatal ? "fatal" : "error", message: explainHarnessError(error, agentName) });
+        if (fatal) shutdown().finally(() => process.exit(1));
+      });
   } else if (message.type === "steer") {
     steer(String(message.text || "")).catch((error) => {
       emit({ type: "steering_error", message: error.message || String(error) });
+    });
+  } else if (message.type === "read_clipboard") {
+    clipboardAbortController?.abort();
+    const controller = new AbortController();
+    clipboardAbortController = controller;
+    readClipboard(message.policy, { signal: controller.signal }).then((result) => {
+      if (!controller.signal.aborted && !shuttingDown)
+        emit({ type: "clipboard", requestId: message.requestId, ...result });
+    }).catch((error) => {
+      if (controller.signal.aborted || shuttingDown) return;
+      emit({
+        type: "clipboard_error",
+        requestId: message.requestId,
+        message: error.message || "Could not read the clipboard.",
+      });
+    }).finally(() => {
+      if (clipboardAbortController === controller) clipboardAbortController = null;
     });
   } else if (message.type === "permission") {
     answerPermission(message);

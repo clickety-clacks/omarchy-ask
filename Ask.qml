@@ -15,9 +15,25 @@ Item {
   property var activeOverlay: null
   property var conversations: []
   property int conversationSequence: 0
-  readonly property bool opened: activeOverlay !== null
+  property bool opening: false
+  property string pendingOpenPayload: ""
+  readonly property bool shortcutRuntimeReady: shortcutRuntime.available
+  readonly property bool shortcutRuntimePending: shortcutRuntime.pending
+  readonly property string shortcutRuntimeError: shortcutRuntime.error
+  readonly property bool opened: opening || (activeOverlay !== null
     && activeOverlay.opened
-    && !activeOverlay.pinned
+    && !activeOverlay.pinned)
+
+  ShortcutRuntime {
+    id: shortcutRuntime
+    onSettled: {
+      if (!root.opening) return
+      var payload = root.pendingOpenPayload
+      root.opening = false
+      root.pendingOpenPayload = ""
+      root.createConversation(payload)
+    }
+  }
 
   // The manager owns the font scale so every conversation — overlay or pinned
   // window — reads one value and a single writer persists it.
@@ -36,83 +52,22 @@ Item {
   property real keyboardDeceleration: 608
   property var fileOpenCommand: []
   property var fileEditCommand: []
-  property bool useHyprlandShortcutSubmap: false
   property int repoSearchDepth: 6
   property string selectedAgent: ""
   property string selectedModel: ""
   property string selectedReasoningEffort: ""
+  property string agentdHubHost: ""
+  property int agentdHubPort: 0
   readonly property real keyboardPageImpulse: keyboardLineImpulse * (740 / 360)
   property bool settingsLoaded: false
+  // Keep the complete decoded object so adding a setting never erases fields
+  // owned by a newer Ask build or the image-paste extension.
+  property var persistedSettings: ({})
   // Retained so writing the font scale cannot drop the mode the bridge owns.
   property string persistedPermissionMode: "permission"
   property bool copyToastVisible: false
-  // One manager owns the compositor submap. Conversations only affect the
-  // derived desired state; they never dispatch Hyprland commands themselves.
-  readonly property bool shortcutSubmapDesired: useHyprlandShortcutSubmap
-    && activeOverlay !== null && activeOverlay.opened && !activeOverlay.pinned
-  property bool shortcutSubmapOwned: false
-  property bool shortcutSubmapTarget: false
-  property bool shortcutSubmapInitialized: false
-  property int shortcutSubmapFailures: 0
-
-  onShortcutSubmapDesiredChanged: {
-    shortcutSubmapRetry.stop()
-    shortcutSubmapFailures = 0
-    reconcileShortcutSubmap()
-  }
-
-  function reconcileShortcutSubmap() {
-    if (!shortcutSubmapInitialized || shortcutSubmapProc.running) return
-    if (shortcutSubmapDesired === shortcutSubmapOwned) return
-    shortcutSubmapTarget = shortcutSubmapDesired
-    shortcutSubmapProc.command = [
-      "hyprctl", "dispatch",
-      "hl.dsp.submap(\"" + (shortcutSubmapTarget ? "omarchy-ask" : "reset") + "\")"
-    ]
-    shortcutSubmapProc.running = true
-  }
-
-  Process {
-    id: shortcutSubmapProbe
-    command: ["hyprctl", "submap"]
-    stdout: StdioCollector {}
-    Component.onCompleted: running = true
-    onExited: function(exitCode) {
-      var current = String(stdout.text || "").trim()
-      root.shortcutSubmapOwned = current === "omarchy-ask"
-      root.shortcutSubmapInitialized = true
-      root.reconcileShortcutSubmap()
-    }
-  }
-
-  Process {
-    id: shortcutSubmapProc
-    onExited: function(exitCode) {
-      if (exitCode === 0) {
-        root.shortcutSubmapOwned = root.shortcutSubmapTarget
-        root.shortcutSubmapFailures = 0
-        root.reconcileShortcutSubmap()
-      } else {
-        root.shortcutSubmapFailures++
-        shortcutSubmapRetry.interval = Math.min(8000,
-          250 * Math.pow(2, Math.min(5, root.shortcutSubmapFailures - 1)))
-        shortcutSubmapRetry.restart()
-      }
-    }
-  }
-
-  Timer {
-    id: shortcutSubmapRetry
-    repeat: false
-    onTriggered: root.reconcileShortcutSubmap()
-  }
-
-  Component.onDestruction: {
-    // Best effort for graceful plugin unload. SUPER+ESCAPE remains the crash
-    // recovery path because no in-process cleanup can run after SIGKILL.
-    if (shortcutSubmapOwned || shortcutSubmapDesired)
-      Quickshell.execDetached(["hyprctl", "dispatch", "hl.dsp.submap(\"reset\")"])
-  }
+  // Never take over (or reset) the user's compositor submap. Legacy
+  // useHyprlandShortcutSubmap preferences are deliberately ignored.
 
   function showCopyToast() {
     copyToastFade.stop()
@@ -142,7 +97,8 @@ Item {
   function loadSettings(raw) {
     var data = {}
     try { data = JSON.parse(raw || "{}") } catch (error) { data = {} }
-    if (!data || typeof data !== "object") data = {}
+    if (!data || typeof data !== "object" || Array.isArray(data)) data = {}
+    persistedSettings = data
     persistedPermissionMode = data.permissionMode === "yolo" ? "yolo" : "permission"
     var scale = Number(data.fontScale)
     fontScale = (isFinite(scale) && scale > 0)
@@ -162,7 +118,6 @@ Item {
       : 608
     fileOpenCommand = normalizeCommand(data.fileOpenCommand)
     fileEditCommand = normalizeCommand(data.fileEditCommand)
-    useHyprlandShortcutSubmap = data.useHyprlandShortcutSubmap === true
     var repoDepth = Number(data.repoSearchDepth)
     repoSearchDepth = isFinite(repoDepth)
       ? (repoDepth <= 0 ? 0 : Math.max(1, Math.min(128, Math.round(repoDepth))))
@@ -170,6 +125,16 @@ Item {
     selectedAgent = String(data.agent || "")
     selectedModel = selectedAgent ? String(data.model || "") : ""
     selectedReasoningEffort = selectedAgent ? String(data.reasoningEffort || "") : ""
+    var hub = data.agentdHub && typeof data.agentdHub === "object"
+      && !Array.isArray(data.agentdHub) ? data.agentdHub : ({})
+    var hasHubHost = Object.prototype.hasOwnProperty.call(hub, "host")
+    var hasHubPort = Object.prototype.hasOwnProperty.call(hub, "port")
+    var rawHubHost = hasHubHost ? hub.host : (data.agentdHubHost || "")
+    agentdHubHost = rawHubHost === null || rawHubHost === undefined
+      ? "" : String(rawHubHost).trim()
+    var hubPort = Number(hasHubPort ? hub.port : data.agentdHubPort)
+    agentdHubPort = isFinite(hubPort) && hubPort > 0
+      ? Math.round(Math.max(1, Math.min(65535, hubPort))) : 0
     settingsLoaded = true
   }
 
@@ -187,20 +152,46 @@ Item {
 
   function flushSettings() {
     if (!settingsLoaded) return
-    settingsFile.setText(JSON.stringify({
-      permissionMode: persistedPermissionMode,
-      fontScale: fontScale,
-      searchDebounceMs: searchDebounceMs,
-      keyboardLineImpulse: keyboardLineImpulse,
-      keyboardDeceleration: keyboardDeceleration,
-      fileOpenCommand: fileOpenCommand,
-      fileEditCommand: fileEditCommand,
-      useHyprlandShortcutSubmap: useHyprlandShortcutSubmap,
-      repoSearchDepth: repoSearchDepth,
-      agent: selectedAgent,
-      model: selectedModel,
-      reasoningEffort: selectedReasoningEffort
-    }, null, 2) + "\n")
+    var output = {}
+    var existing = persistedSettings && typeof persistedSettings === "object"
+      && !Array.isArray(persistedSettings)
+      ? persistedSettings : ({})
+    var keys = Object.keys(existing)
+    for (var i = 0; i < keys.length; i++) output[keys[i]] = existing[keys[i]]
+    output.permissionMode = persistedPermissionMode
+    output.fontScale = fontScale
+    output.searchDebounceMs = searchDebounceMs
+    output.keyboardLineImpulse = keyboardLineImpulse
+    output.keyboardDeceleration = keyboardDeceleration
+    output.fileOpenCommand = fileOpenCommand
+    output.fileEditCommand = fileEditCommand
+    output.repoSearchDepth = repoSearchDepth
+    output.agent = selectedAgent
+    output.model = selectedModel
+    output.reasoningEffort = selectedReasoningEffort
+    output.agentdHubHost = agentdHubHost
+    output.agentdHubPort = agentdHubPort
+    var existingHub = output.agentdHub && typeof output.agentdHub === "object"
+      && !Array.isArray(output.agentdHub)
+      ? output.agentdHub : ({})
+    output.agentdHub = {}
+    var hubKeys = Object.keys(existingHub)
+    for (var h = 0; h < hubKeys.length; h++) output.agentdHub[hubKeys[h]] = existingHub[hubKeys[h]]
+    output.agentdHub.host = agentdHubHost
+    output.agentdHub.port = agentdHubPort
+    persistedSettings = output
+    settingsFile.setText(JSON.stringify(output, null, 2) + "\n")
+  }
+
+  function setAgentdHub(host, port) {
+    var nextHost = String(host || "").trim()
+    var nextPort = Number(port)
+    if (!isFinite(nextPort) || nextPort <= 0) nextPort = 0
+    else nextPort = Math.round(Math.max(1, Math.min(65535, nextPort)))
+    if (nextHost === agentdHubHost && nextPort === agentdHubPort) return
+    agentdHubHost = nextHost
+    agentdHubPort = nextPort
+    if (settingsLoaded) settingsSaveTimer.restart()
   }
 
   FileView {
@@ -227,10 +218,19 @@ Item {
     id: motionTuner
     impulse: root.keyboardLineImpulse
     deceleration: root.keyboardDeceleration
+    hubHost: root.agentdHubHost
+    hubPort: root.agentdHubPort
     onMotionChanged: function(nextImpulse, nextDeceleration) {
       root.setKeyboardMotion(nextImpulse, nextDeceleration)
     }
     onResetRequested: root.setKeyboardMotion(335, 608)
+    onHubChanged: function(host, port) { root.setAgentdHub(host, port) }
+  }
+
+  AgentdHub {
+    id: agentdHub
+    host: root.agentdHubHost
+    port: root.agentdHubPort
   }
 
   Loader {
@@ -339,6 +339,7 @@ Item {
     conversation.keyboardDeceleration = Qt.binding(function() { return root.keyboardDeceleration })
     conversation.fileOpenCommand = Qt.binding(function() { return root.fileOpenCommand })
     conversation.fileEditCommand = Qt.binding(function() { return root.fileEditCommand })
+    conversation.agentRows = Qt.binding(function() { return agentdHub.agents })
     conversation.agentName = root.selectedAgent
     conversation.modelName = root.selectedModel
     conversation.reasoningEffort = root.selectedReasoningEffort
@@ -350,6 +351,7 @@ Item {
     conversation.fontScaleResetRequested.connect(function() { root.setFontScale(1) })
     conversation.motionTunerRequested.connect(function() { motionTuner.open() })
     conversation.harnessSelectorRequested.connect(function() { root.openHarnessSelector() })
+    conversation.agentRequested.connect(function(id) { agentdHub.activate(id) })
     conversation.sessionRestartRequested.connect(function() {
       conversation.agentName = root.selectedAgent
       conversation.modelName = root.selectedModel
@@ -363,22 +365,28 @@ Item {
     conversation.pinnedChanged.connect(function() {
       if (conversation.pinned && root.activeOverlay === conversation)
         root.activeOverlay = null
-      root.reconcileShortcutSubmap()
     })
     conversation.open(payloadJson || "{}")
-    reconcileShortcutSubmap()
     return conversation
   }
 
   function open(payloadJson) {
+    if (opening) return
     if (activeOverlay && activeOverlay.opened && !activeOverlay.pinned) return
+    shortcutRuntime.ensure()
+    if (shortcutRuntime.pending) {
+      opening = true
+      pendingOpenPayload = String(payloadJson || "{}")
+      return
+    }
     createConversation(payloadJson)
   }
 
   function close() {
+    opening = false
+    pendingOpenPayload = ""
     if (activeOverlay && activeOverlay.opened && !activeOverlay.pinned)
       activeOverlay.close()
-    reconcileShortcutSubmap()
   }
 
   function pinActive() {
@@ -387,16 +395,15 @@ Item {
   }
 
   function closeAll() {
+    opening = false
+    pendingOpenPayload = ""
     if (harnessSelectorLoader.item) harnessSelectorLoader.item.visible = false
     var snapshot = conversations.slice()
     for (var i = 0; i < snapshot.length; i++) snapshot[i].close()
-    reconcileShortcutSubmap()
   }
 
   function toggle(payloadJson) {
-    if (activeOverlay && activeOverlay.opened && !activeOverlay.pinned)
-      activeOverlay.close()
-    else
-      createConversation(payloadJson)
+    if (opened) close()
+    else open(payloadJson)
   }
 }

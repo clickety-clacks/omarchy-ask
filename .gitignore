@@ -1,2 +1,5 @@
 bridge/node_modules/
 *.log
+hyprland/*.so
+hyprland/abi-probe
+tests/.build/

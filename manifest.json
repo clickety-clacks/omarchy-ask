@@ -7,10 +7,12 @@
   "license": "MIT",
   "description": "A transient conversation with the default local coding agent.",
   "kinds": [
-    "overlay"
+    "overlay",
+    "menu"
   ],
   "keepLoaded": true,
   "entryPoints": {
-    "overlay": "Ask.qml"
+    "overlay": "Ask.qml",
+    "menu": "Ask.qml"
   }
 }

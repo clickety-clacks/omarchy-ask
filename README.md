@@ -11,6 +11,7 @@ An AI-enabled launcher for Omarchy.
 - **One box, two jobs.** Type a question for Claude Code or Codex over ACP, or type a menu row and run it.
 - **Your menu, live.** Ask reads the same definitions the `SUPER+SPACE` menu does, so anything you add there shows up here the moment you save it.
 - **Launches apps too.** Same entries, icons and ranking as the app launcher, in one flat list.
+- **Recent files first.** Matching files sort newest-modified first, both in the main results and in `@` file search.
 - **Return means what you meant.** Type and hit Return to ask; arrow onto a match first and Return runs it instead.
 - **Zero residue.** Conversations exist only while the overlay is open.
 - **Pin it.** `Ctrl+P` turns a live conversation into a normal window.
@@ -40,32 +41,30 @@ Add a Hyprland binding to `~/.config/hypr/bindings.lua`:
 o.bind("CTRL + SHIFT + SPACE", "Ask", "omarchy-shell shell toggle clickety-clacks.ask '{}'")
 ```
 
-To let Ask receive chords that are globally bound in Hyprland, define a modal
-submap and enable it in `ask.json`:
+Ask no longer enters a modal Hyprland submap. The old
+`useHyprlandShortcutSubmap` preference is ignored: a modal map hid unrelated
+system bindings instead of inheriting them. Ask never resets another active
+submap or copies the user's keymap.
 
-```lua
-hl.define_submap("omarchy-ask", function()
-  hl.bind("SUPER + comma", hl.dsp.exec_cmd("omarchy-shell shell call clickety-clacks.ask openHarnessSelector '{}'"))
-  hl.bind("CTRL + SHIFT + SPACE", hl.dsp.exec_cmd("omarchy-shell shell toggle clickety-clacks.ask '{}'"))
-  hl.bind("SUPER + ESCAPE", hl.dsp.submap("reset")) -- crash-safe escape hatch
-end)
-```
-
-```json
-{ "useHyprlandShortcutSubmap": true }
-```
-
-Ask's manager serializes entry and reset for the current layer popup only; a
-pinned or older conversation cannot reset a newer overlay's submap. Startup
-also resets a stale `omarchy-ask` submap left by an earlier shell failure.
-Normal global bindings remain registered and untouched. Leave the setting
-false unless the matching Hyprland submap exists. `SUPER+ESCAPE` is the
-out-of-process recovery path after a hard shell crash.
+Focused shortcut precedence is implemented through
+the ABI-matched compositor module in `hyprland/`. It reserves only Ask's own
+active shortcuts and leaves all other bindings with the compositor, including
+live additions and changes. This worktree initializes the support automatically
+at startup, building an ABI-matched cached module when necessary. It requires
+the tested Hyprland version and local build dependencies; see the
+[dependency and recovery details](docs/shortcut-module.md). This integration
+is **not yet released by the command above**. The current worktree has also
+been tested as an installed plugin on plumbus using kernel keyboard input.
+Restart the shell after installing these structural QML changes. If support is unavailable, Ask
+still opens and system bindings remain active, but conflicting system bindings
+take precedence. See the current
+[integration evidence and remaining work](docs/reviews/2026-09-13-plumbus-shortcut-scope.md).
 
 Then reload Hyprland:
 
 ```sh
 hyprctl reload
+hyprctl configerrors
 ```
 
 ## Remove
@@ -138,22 +137,35 @@ opening Ask again creates an independent conversation.
 - `Ctrl+1` through `Ctrl+0`: move selection to the corresponding visible
   result (first through tenth); repeat the same shortcut to perform its normal
   Return action, or press Return/modifier+Return for a specific action
-- `Ctrl+,`: open the live scroll-motion curve editor beside Ask; drag its
-  endpoint to choose coast distance and duration directly
+- `Ctrl+,`: open settings beside Ask; adjust the scroll-motion curve or
+  configure an optional Agentd Hub address and port (unreleased worktree feature)
 - `Super+,`: choose the harness, model, and thinking level for new
   conversations; Return saves and Escape cancels
 - Arithmetic, functions, aggregates such as `sum 10 34 100`, and unit
-  conversions such as `10 km in miles` appear as the first suggestion even
+  conversions such as `10 km in miles` appear as suggestions even
   inside ordinary prose. Selecting the row copies its answer.
-- Matching files and Git repositories appear as compact aggregate suggestions.
+- In this unreleased worktree, matching files, Git repositories, windows,
+  applications, and agents appear as count summaries first, followed by Go
+  matches and balanced examples from each bucket. The minimum fill target is
+  twenty individual rows, excluding summaries. A bucket with one known match
+  shows that item directly, including while other sources are still searching.
+  See [agent search](docs/agent-search.md)
+  for the optional Hub integration and current acceptance status.
   Select one to enter its inline result mode, or start with `@` for files, `^`
-  for repositories, and `%` for open windows. The prompt marker changes to the
+  for repositories, `%` for open windows, and `&` for agents. The prompt marker changes to the
   boxed mode sigil; Backspace on an empty mode query returns to normal search.
+  A bare `&` lists all known agents; `&name` filters by name. File popup
+  previews follow the selected file in both ordinary mixed
+  results and file-only search, and clear when a non-file row is selected.
   File and repository searches cover the user's full home directory by
   default. Set `ASK_FILE_ROOT` in the shell environment to intentionally limit
   both indexes to a different directory. Repository discovery defaults to six
   directory levels; set `repoSearchDepth` in `ask.json` to another depth, or
   to `0` for unlimited traversal. `ASK_REPO_SEARCH_DEPTH` overrides that value.
+  Local and mounted subtrees search independently: results appear as they are
+  found, and a stalled source cannot discard results from another. Selection
+  and previews follow the same item when later results reorder the list;
+  disappearing items clear selection rather than silently changing its target.
   Terminal windows are enriched from their process trees, including SSH/Mosh
   hosts and tmux session names, and `%` results are grouped by workspace.
   Focused-mode results use a bounded scrolling viewport and retain the complete
@@ -166,6 +178,21 @@ opening Ask again creates an independent conversation.
 
 Pinned conversations remain open with their own agent sessions. Invoking the
 Ask shortcut again opens a fresh overlay instead of dismissing pinned windows.
+
+Paste image data or copied image files with `Ctrl+V`. Ask shows removable
+thumbnails and sends them with your text. PNG, JPEG, GIF, and WebP are accepted,
+up to 5 MiB per image and 20 MiB per draft, without resizing or conversion.
+Images leave `@`, `^`, or `%` search mode while keeping the query text, and
+suppress launcher actions until removed. Ordinary text paste remains available.
+
+Submitted images stay visible and locked during the answer. Wait for the reply
+before pasting another image; supported text steering remains available.
+Success clears the submitted images. On failure, Ask restores the original
+draft if the composer is empty. If newer text exists, the failed original has
+its own labeled thumbnails and **Retry original** action. Return sends only the
+current composer draft. Retry never overwrites newer text or runs automatically.
+Closing the conversation clears Ask's copies; source files, the system clipboard,
+and harness-owned logs are not erased.
 
 Text size applies to every conversation, in the overlay and in pinned windows
 alike, and is remembered across restarts.
