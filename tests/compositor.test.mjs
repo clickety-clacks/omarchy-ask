@@ -32,54 +32,67 @@ async function focusArgs(backend, address) {
   }
 }
 
-test("Hyprland focuses through eval; Scottland's shim needs dispatch", async () => {
+test("Hyprland focuses through eval", async () => {
   const hypr = await focusArgs(backends.hyprland, "0x5c07000001ea");
   assert.deepEqual(hypr.args, ["eval", 'hl.dispatch(hl.dsp.focus({ window = "address:0x5c07000001ea" }))']);
-  const scott = await focusArgs(backends.scottland, "0x5c07000001ea");
-  assert.deepEqual(scott.args, ["dispatch", 'hl.dsp.focus({ window = "address:0x5c07000001ea" })']);
 });
 
 test("malformed addresses never reach the compositor", async () => {
-  for (const backend of Object.values(backends)) {
-    const result = await focusArgs(backend, '0x1" }) os.execute("x');
-    assert.equal(result.sent, false);
-    assert.equal(result.args, null);
-  }
-});
-
-test("Scottland presents through its own request, by the shim's stableId", async () => {
+  const hypr = await focusArgs(backends.hyprland, '0x1" }) os.execute("x');
+  assert.equal(hypr.sent, false);
+  assert.equal(hypr.args, null);
   const sent = [];
   const call = async (method, data) => { sent.push([method, data]); return { result: "ok" }; };
-  const original = backends.scottland;
-  const dir = mkdtempSync(join(tmpdir(), "ask-compositor-"));
-  const fake = join(dir, "hyprctl");
-  writeFileSync(fake, `#!${process.execPath}\nif (process.argv.includes("clients")) console.log(JSON.stringify([{ address: "0x5c07000001ea", stableId: "000001ea", mapped: true }]));\nelse console.log("ok");\n`);
-  chmodSync(fake, 0o755);
-  const path = process.env.PATH;
-  process.env.PATH = `${dir}:${path}`;
-  try {
-    assert.equal(await original.presentWindow("0x5c07000001ea", call), true);
-    assert.deepEqual(sent, [["scottland/present", { window: 0x1ea }]]);
-  } finally {
-    process.env.PATH = path;
-    rmSync(dir, { recursive: true, force: true });
+  for (const bad of ['0x1" }) os.execute("x', "0x0", "", "12"]) {
+    assert.equal(await backends.scottland.focusWindow(bad, call), false);
+    assert.equal(await backends.scottland.presentWindow(bad, call), false);
   }
+  assert.deepEqual(sent, []);
+});
+
+// A fake Wayfire IPC: records requests, answers from a fixed view list.
+function fakeWayfire({ present = { result: "ok" } } = {}) {
+  const sent = [];
+  const views = [
+    { id: 7, pid: -1, role: "toplevel", mapped: false, "app-id": "nil", title: "nil" },
+    { id: 0x1ea, pid: 4242, role: "toplevel", mapped: true, "app-id": "com.mitchellh.ghostty",
+      title: "[mosh] engram", "last-focus-timestamp": 50 },
+    { id: 0x1f0, pid: 4343, role: "toplevel", mapped: true, "app-id": "chromium",
+      title: "Docs", "last-focus-timestamp": 90 },
+    { id: 0x200, pid: 4444, role: "desktop-environment", mapped: true, "app-id": "bar", title: "layer-shell" },
+  ];
+  const call = async (method, data) => {
+    sent.push([method, data]);
+    if (method === "window-rules/list-views") return views;
+    if (method === "window-rules/get-focused-view") return { result: "ok", info: views[2] };
+    if (method === "scottland/present") return present;
+    return { result: "ok" };
+  };
+  return { sent, call };
+}
+
+test("Scottland lists mapped toplevels straight from Wayfire, ranked by last focus", async () => {
+  const { call } = fakeWayfire();
+  const windows = await backends.scottland.clients(call);
+  assert.deepEqual(windows.map((w) => [w.address, w.stableId, w.pid, w.class, w.focusHistoryID]), [
+    ["0x1ea", "000001ea", 4242, "com.mitchellh.ghostty", 1],
+    ["0x1f0", "000001f0", 4343, "chromium", 0],
+  ]);
+  assert.equal(await backends.scottland.activeWindowAddress(call), "0x1f0");
+});
+
+test("Scottland focuses and presents by window id over Wayfire IPC, never hyprctl", async () => {
+  const { sent, call } = fakeWayfire();
+  assert.equal(await backends.scottland.focusWindow("0x1ea", call), true);
+  assert.equal(await backends.scottland.presentWindow("0x1ea", call), true);
+  assert.deepEqual(sent, [
+    ["window-rules/focus-view", { id: 0x1ea }],
+    ["scottland/present", { window: 0x1ea }],
+  ]);
 });
 
 test("a Scottland without the present request still focuses the window", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "ask-compositor-"));
-  const log = join(dir, "args.json");
-  const fake = join(dir, "hyprctl");
-  writeFileSync(fake, `#!${process.execPath}\nif (process.argv.includes("clients")) console.log(JSON.stringify([{ address: "0x5c07000001ea", stableId: "000001ea", mapped: true }]));\nelse { require("fs").writeFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2))); console.log("ok"); }\n`);
-  chmodSync(fake, 0o755);
-  const path = process.env.PATH;
-  process.env.PATH = `${dir}:${path}`;
-  try {
-    const old = async () => ({ error: "No such method found!" });
-    assert.equal(await backends.scottland.presentWindow("0x5c07000001ea", old), true);
-    assert.deepEqual(JSON.parse(readFileSync(log, "utf8")), ["dispatch", 'hl.dsp.focus({ window = "address:0x5c07000001ea" })']);
-  } finally {
-    process.env.PATH = path;
-    rmSync(dir, { recursive: true, force: true });
-  }
+  const { sent, call } = fakeWayfire({ present: { error: "No such method found!" } });
+  assert.equal(await backends.scottland.presentWindow("0x1ea", call), true);
+  assert.deepEqual(sent.at(-1), ["window-rules/focus-view", { id: 0x1ea }]);
 });
