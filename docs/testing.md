@@ -13,6 +13,7 @@ node --check bridge/bridge.js
 node --test bridge/harness-policy.test.js bridge/harness-errors.test.js
 node --test tests/search-settings.test.cjs tests/agentd-hub-bridge.test.mjs tests/agent-window-resolver.test.mjs
 node --test tests/resolver-process-cleanup.test.mjs tests/agentd-hub-snapshot.test.mjs
+node --test tests/transport-policy.test.mjs tests/agent-launch-roundtrip.test.mjs
 node --test tests/shortcut-*.test.* tests/compositor.test.mjs tests/app-search.test.cjs tests/settings-window.test.cjs
 git diff --check
 
@@ -68,9 +69,10 @@ attachment correctness. Before accepting this feature, verify:
   exact agent/pane and focus its workspace without connection changes.
 - Stale PID, pane, connection tuple, or window identity never selects an
   unrelated target; ambiguous evidence fails closed.
-- New attachment really uses mosh when available, falls back to SSH on startup
-  failure, and never reconnects after a normal session exit or detaches another
-  client. Missing tmux and transport failure produce distinct truthful notices.
+- New attachment uses the transport `agentdHub.transport` selects (et when
+  observed reachable under `auto`, else mosh, else SSH), falls back to SSH on
+  startup failure, and never reconnects after a normal session exit or detaches
+  another client. Missing tmux and transport failure produce distinct truthful notices.
 
 Use disposable tmux sessions and isolated Wayland fixtures with the fake ACP
 bridge. Do not submit a model prompt merely to verify search or settings.

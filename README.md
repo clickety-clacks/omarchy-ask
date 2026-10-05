@@ -121,6 +121,33 @@ Each conversation starts its own ACP bridge and session and reuses them for
 every turn. Pinning retains that exact process and session in a normal window;
 opening Ask again creates an independent conversation.
 
+### Opening a remote agent
+
+Choosing an agent from the Agentd Hub focuses its existing window when Ask can
+find one. Otherwise Ask opens Ghostty attached to the agent's tmux pane over
+Eternal Terminal (`et`), `mosh` or `ssh`. Set the choice in `ask.json`:
+
+```json
+"agentdHub": { "host": "...", "port": 8788, "transport": "auto" }
+```
+
+`transport` is `"auto"` (the default), `"et"`, `"mosh"`, `"ssh"` or `"local"`.
+`auto` uses et when this machine has `et` and the host's `etserver` was
+observed reachable, then mosh, then ssh. Over et, apps in the remote tmux
+follow Ghostty's light/dark mode; mosh cannot relay that, but keeps its
+predictive local echo for slow links. Naming a transport uses it whenever its
+client is installed here. et and mosh fall back to `ssh -tt` in the same
+window if they cannot start; a normal detach never reconnects.
+
+The first time Ask opens an agent on a host it checks, over the SSH connection
+it already uses to verify the agent, whether etserver answers and whether UDP
+reaches mosh's ports. The result is kept for a week in
+`~/.local/state/omarchy-ask/transport-capabilities/HOST.json`, never in
+`ask.json`. Delete the file to re-check sooner; Ask also drops it when et or
+mosh fails to start on a host ssh still reaches. If the check times out, Ask
+connects as before (mosh first). Yoohoo follows the same rules
+(agent-window-resolver's `docs/transport-policy-v1.md`).
+
 ## Controls
 
 - `Return`: submit
@@ -168,7 +195,7 @@ opening Ask again creates an independent conversation.
   found, and a stalled source cannot discard results from another. Selection
   and previews follow the same item when later results reorder the list;
   disappearing items clear selection rather than silently changing its target.
-  Terminal windows are enriched from their process trees, including SSH/Mosh
+  Terminal windows are enriched from their process trees, including SSH, mosh and et
   hosts and tmux session names, and `%` results are grouped by workspace.
   Focused-mode results use a bounded scrolling viewport and retain the complete
   backend match set (up to 100 files/repositories and 40 windows).
@@ -270,6 +297,9 @@ in:
 ```text
 ~/.config/omarchy/ask.json
 ```
+
+What Ask has observed about remote hosts' transports is kept separately, under
+`~/.local/state/omarchy-ask/transport-capabilities/`.
 
 The coding-agent CLIs may maintain their own logs or session data according to
 their own configuration; Omarchy Ask does not manage or erase that data.

@@ -58,6 +58,10 @@ Item {
   property string selectedReasoningEffort: ""
   property string agentdHubHost: ""
   property int agentdHubPort: 0
+  // agentdHub.transport in ask.json: "auto", "local", "et", "mosh" or "ssh".
+  // Read only; the bridge validates it and Ask never writes discovered
+  // transport facts into ask.json (they live under ~/.local/state).
+  property string agentdHubTransport: "auto"
   readonly property real keyboardPageImpulse: keyboardLineImpulse * (740 / 360)
   property bool settingsLoaded: false
   // Keep the complete decoded object so adding a setting never erases fields
@@ -135,6 +139,7 @@ Item {
     var hubPort = Number(hasHubPort ? hub.port : data.agentdHubPort)
     agentdHubPort = isFinite(hubPort) && hubPort > 0
       ? Math.round(Math.max(1, Math.min(65535, hubPort))) : 0
+    agentdHubTransport = typeof hub.transport === "string" ? hub.transport : "auto"
     settingsLoaded = true
   }
 
@@ -240,6 +245,7 @@ Item {
     id: agentdHub
     host: root.agentdHubHost
     port: root.agentdHubPort
+    transport: root.agentdHubTransport
   }
 
 

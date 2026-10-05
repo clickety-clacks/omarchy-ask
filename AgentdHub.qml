@@ -9,6 +9,7 @@ Item {
 
   property string host: ""
   property int port: 0
+  property string transport: "auto"
   property var agents: []
   property bool connected: false
   property string error: ""
@@ -32,7 +33,7 @@ Item {
       root.agents = []
       root.restartDelayMs = 1000
     }
-    send({ op: "configure", host: nextHost, port: nextPort })
+    send({ op: "configure", host: nextHost, port: nextPort, transport: String(root.transport || "auto") })
   }
 
   function activate(id) {
@@ -41,6 +42,7 @@ Item {
 
   onHostChanged: configure()
   onPortChanged: configure()
+  onTransportChanged: configure()
 
   Timer {
     id: restartTimer

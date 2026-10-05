@@ -18,7 +18,7 @@ const request = () => ({
   windows: [{ stableId: "abc", address: "0xabc", pid: 100, startTimeTicks: "20" }],
 });
 const unresolved = (r) => ({
-  schema: "agent-window-resolver.response.v1", requestId: r.requestId,
+  schema: "agent-window-resolver.response.v1", resolverVersion: "0.2.0", requestId: r.requestId,
   operation: r.operation, requestedRelation: r.requestedRelation,
   status: "unresolved", candidates: [], evidence: [],
   reasons: [{ code: "candidate_count", source: "proc", message: "No match", retryable: false }],
@@ -58,7 +58,7 @@ const matchCandidate = (r, index = 0) => ({
   },
 });
 const matchResponse = (r) => ({
-  schema: "agent-window-resolver.response.v1", requestId: r.requestId,
+  schema: "agent-window-resolver.response.v1", resolverVersion: "0.2.0", requestId: r.requestId,
   operation: "match", status: "matched",
   candidates: [matchCandidate(r, 0), matchCandidate(r, 1)],
   evidence: [], reasons: [],
@@ -91,21 +91,49 @@ test("ticks retain uint64 precision and reject unsafe numeric input", () => {
     assert.throws(() => canonicalTicks(value));
 });
 
-test("bundled resolver files retain the accepted canonical hashes", () => {
-  const expected = {
-    "__init__.py": "eb4317c4f98a441006f7dd11e458596c8df32a5487b1ccccba5743ad69ea285b",
-    "__main__.py": "6d8b7d7846a845059d7a3107143f11131f63c5511d669b44085b15ec5e3d2279",
-    "cli.py": "8456de39f7234d2d21d1b8fb1b322de59aa97348498bf5c90dbc2fbf0c45474a",
-    "collector.py": "06f510e61e598b4378effeb7198b22d5d310e428dbf42396849e5b0c0cb860cc",
-    "linux.py": "f2911ba1d4cca826542ed8c1a8be571a6688ac7f37443b7cd996775d7663af45",
-    "model.py": "c917960688c83989998beb77b8a070ff250df061683a6dd47610d2063b6e172d",
-    "resolver.py": "0be324ff3bf9052182c7114b5976a0e6e3ab4696942b6f123da934b1268b65bb",
-  };
+// git's id for content, as scripts/sync-resolver.py records it per file.
+const gitBlobId = (data) => createHash("sha1")
+  .update(Buffer.concat([Buffer.from(`blob ${data.length}\0`), data])).digest("hex");
+
+test("bundled resolver is byte for byte the recorded upstream commit", () => {
   const packagePath = join(BUNDLED_MODULE_ROOT, "agent_window_resolver");
+  const record = JSON.parse(readFileSync(join(packagePath, "VENDORED.json"), "utf8"));
+  assert.equal(record.upstream, "https://github.com/clickety-clacks/agent-window-resolver");
+  assert.match(record.commit, /^[0-9a-f]{40}$/);
+  assert.match(record.syncedOn, /^\d{4}-\d{2}-\d{2}$/);
   assert.deepEqual(readdirSync(packagePath).filter((name) => name.endsWith(".py")).sort(),
-    Object.keys(expected).sort());
-  for (const [name, hash] of Object.entries(expected))
-    assert.equal(createHash("sha256").update(readFileSync(join(packagePath, name))).digest("hex"), hash);
+    Object.keys(record.files).sort());
+  assert.ok(record.files["transports.py"], "vendored copy predates transport observation");
+  for (const [name, blob] of Object.entries(record.files))
+    assert.equal(gitBlobId(readFileSync(join(packagePath, name))), blob,
+      `${name} differs from upstream ${record.commit}; re-run scripts/sync-resolver.py`);
+  for (const extra of Object.values(record.extras))
+    assert.equal(gitBlobId(readFileSync(new URL(`../${extra.vendoredAt}`, import.meta.url))), extra.blob,
+      `${extra.vendoredAt} differs from upstream ${record.commit}`);
+});
+
+test("a copy without resolverVersion is reported as too old", () => {
+  const r = request();
+  const old = unresolved(r);
+  delete old.resolverVersion;
+  assert.throws(() => validateResolverResponse(old, r), { code: "resolver_too_old" });
+});
+
+test("transport observation is accepted only on a verified response that asked", () => {
+  const r = { ...request(), operation: "verify-target", windows: [], probeTransports: true };
+  delete r.requestedRelation;
+  const verified = { ...unresolved(r), status: "verified", reasons: [], verifiedTarget: {
+    identity: { ...r.target.identity }, location: { kind: "local" },
+    evidence: [{ code: "target_process_live", source: "proc", result: "supports" }] } };
+  delete verified.requestedRelation;
+  verified.transports = { state: "complete",
+    ssh: { state: "available", code: "ssh_probe_succeeded" },
+    et: { state: "available", code: "et_reachable", port: 2022 },
+    mosh: { state: "unavailable", code: "mosh_udp_blocked" } };
+  assert.equal(validateResolverResponse(verified, r).transports.et.port, 2022);
+  assert.throws(() => validateResolverResponse(verified, { ...r, probeTransports: undefined }));
+  assert.throws(() => validateResolverResponse({ ...verified,
+    transports: { ...verified.transports, et: { state: "maybe", code: "x" } } }, r));
 });
 
 test("client uses the fixed bundled Python module and one EOF-framed request", async () => {
@@ -199,7 +227,7 @@ test("trusted cwd defeats package shadowing and fixed Python launch writes no by
         cwd: BUNDLED_MODULE_ROOT, env: environment, encoding: "utf8", timeout: 3000,
       });
     assert.equal(result.status, 0, result.stderr);
-    assert.equal(result.stdout, "agent-window-resolver 0.1.0\n");
+    assert.equal(result.stdout, "agent-window-resolver 0.2.0\n");
     assert.doesNotMatch(result.stderr, /SHADOW PACKAGE EXECUTED/);
     const residue = readdirSync(BUNDLED_MODULE_ROOT, { recursive: true })
       .filter((name) => String(name).includes("__pycache__") || String(name).endsWith(".pyc"));
@@ -255,7 +283,7 @@ test("verified attachment target must preserve requested identity and pane", () 
   r.windows = [];
   r.target.tmux = { session: "agents", windowIndex: "0", paneId: "%7" };
   const response = {
-    schema: "agent-window-resolver.response.v1", requestId: r.requestId,
+    schema: "agent-window-resolver.response.v1", resolverVersion: "0.2.0", requestId: r.requestId,
     operation: "verify-target", status: "verified", candidates: [], evidence: [], reasons: [],
     verifiedTarget: { identity: r.target.identity,
       location: { kind: "tmux", tmux: { ...r.target.tmux, socket: { kind: "path", value: "/test/tmux.sock" } } },

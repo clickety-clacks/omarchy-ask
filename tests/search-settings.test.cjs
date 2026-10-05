@@ -508,7 +508,7 @@ test('Ask settings merge preserves unknown top-level and nested fields', () => {
     settingsLoaded: false, fontScale: 1, searchDebounceMs: 270,
     keyboardLineImpulse: 335, keyboardDeceleration: 608, fileOpenCommand: [],
     fileEditCommand: [], repoSearchDepth: 6, selectedAgent: '', selectedModel: '',
-    selectedReasoningEffort: '', agentdHubHost: '', agentdHubPort: 0,
+    selectedReasoningEffort: '', agentdHubHost: '', agentdHubPort: 0, agentdHubTransport: 'auto',
     settingsSaveTimer: { restart() { this.restarts = (this.restarts || 0) + 1; } },
     settingsFile: { setText(value) { this.text = value; } },
   };
@@ -521,7 +521,7 @@ test('Ask settings merge preserves unknown top-level and nested fields', () => {
     agent: 'codex', model: 'xhigh', reasoningEffort: 'high',
     agentdHubHost: 'legacy-host', agentdHubPort: 99,
     unknownTop: { enabled: true },
-    agentdHub: { host: 'hub.example', port: 1234, unknownNested: { keep: ['me'] } },
+    agentdHub: { host: 'hub.example', port: 1234, transport: 'et', unknownNested: { keep: ['me'] } },
   };
   functions.loadSettings(JSON.stringify(input));
   functions.setAgentdHub('new.example', 4321);
@@ -532,7 +532,9 @@ test('Ask settings merge preserves unknown top-level and nested fields', () => {
   assert.equal(output.agentdHub.host, 'new.example');
   assert.equal(output.agentdHub.port, 4321);
   assert.equal(output.fontScale, 1.2);
+  assert.equal(output.agentdHub.transport, 'et', 'hand-set transport is preserved, not rewritten');
   functions.loadSettings(scope.settingsFile.text);
+  assert.equal(scope.agentdHubTransport, 'et', 'transport preference is read');
   assert.equal(scope.agentdHubHost, 'new.example', 'endpoint survives reload');
   assert.equal(scope.agentdHubPort, 4321, 'port survives reload');
   assert.deepEqual(scope.persistedSettings.agentdHub.unknownNested,
@@ -542,6 +544,7 @@ test('Ask settings merge preserves unknown top-level and nested fields', () => {
     agentdHubHost: 'stale-host', agentdHubPort: 4444 }));
   assert.equal(scope.agentdHubHost, '', 'blank nested host overrides stale legacy host');
   assert.equal(scope.agentdHubPort, 0, 'blank nested endpoint can clear its port');
+  assert.equal(scope.agentdHubTransport, 'auto', 'missing transport means auto');
 });
 
 test('focused bucket search owns Return/Backspace and renders metadata literally', () => {

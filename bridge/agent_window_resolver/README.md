@@ -1,20 +1,29 @@
 # Bundled agent-window resolver
 
-These Python source files are maintained with Yoohoo in the canonical
-`agent-window-resolver` project and copied into Ask as part of its source.
-Do not independently change their matching rules here; coordinate corrections
-in the canonical library and synchronize both products with their tests.
+The Python modules in this directory are a verbatim copy of the
+`agent_window_resolver` package from
+https://github.com/clickety-clacks/agent-window-resolver, the canonical home
+it shares with Yoohoo. `VENDORED.json` beside this file records the upstream
+URL, the exact commit copied, the date of the sync and the git blob id of
+every copied file. `tests/vendored-resolver.test.mjs` fails if any copied
+file differs from that record.
 
-Ask's Node adapter invokes this package internally using Python 3. Users do
-not install a resolver executable, register harnesses, configure a library
-endpoint, or arrange a special terminal launcher.
+Do not edit these files here. Make corrections upstream, then re-vendor:
 
-The resolver is read-only. Ask owns window focus and terminal attachment.
-Canonical protocol and normalization fixtures belong to the library; Ask's
-adapter tests cover JSON framing, identities, process cleanup and actions.
-`tests/bundled-resolver-local.test.mjs` exercises the bundled Python collector
-against the test process without focusing a window or contacting a remote host.
+    scripts/sync-resolver.py REF            # branch, tag or commit upstream
+
+The script copies the package from exactly that commit, also refreshes the
+shared vectors and regression suite Ask carries under `tests/`, and rewrites
+`VENDORED.json`. Review the diff and run the tests in `docs/testing.md`.
+
+Ask's Node adapter invokes this package as
+`python3 -B -S -E -m agent_window_resolver`, so no user Python environment
+reaches it and users install nothing. The resolver is read-only: it observes
+processes, tmux and transports; Ask owns window focus, transport choice and
+terminal attachment. Every response names the library version that produced
+it (`resolverVersion`); the adapter reports a copy that predates 0.2.0 as
+too old.
 
 Current upstream limitation: roaming mosh-server sockets may expose no remote
-peer. V1 requires full reversed endpoint evidence, so synthetic connected-UDP
-tests must not be reported as proof for ordinary bound-server mosh sessions.
+peer, and et sessions have no endpoint pair that links a window to its remote
+tmux client. Both are matched from command-line hints, not exact proof.

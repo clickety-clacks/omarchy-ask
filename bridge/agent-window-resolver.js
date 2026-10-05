@@ -265,14 +265,40 @@ function targetLocationMatches(target, result, operation) {
   return right.socket?.kind === "path";
 }
 
+function validateTransports(value) {
+  const item = exactKeys(value, new Set(["state", "ssh", "et", "mosh"]),
+    new Set(["state", "ssh", "et", "mosh"]), "response.transports");
+  if (!["complete", "partial", "unreachable", "not_applicable"].includes(item.state))
+    fail("resolver_response_incompatible", "response.transports.state is invalid");
+  for (const name of ["ssh", "et", "mosh"]) {
+    const entry = exactKeys(item[name], new Set(["state", "code", "port"]),
+      new Set(["state", "code"]), `response.transports.${name}`);
+    if (!["available", "unavailable", "unknown"].includes(entry.state))
+      fail("resolver_response_incompatible", `response.transports.${name}.state is invalid`);
+    boundedText(entry.code, `response.transports.${name}.code`, 1, 64, /^[a-z][a-z0-9_]{0,63}$/);
+    if (entry.port !== undefined) positiveInteger(entry.port, `response.transports.${name}.port`, 65535);
+  }
+}
+
 function validateResolverResponse(value, request) {
+  // Every response from library 0.2.0 on names its version. A copy without it
+  // predates fields Ask sends (probeTransports), so say so instead of
+  // reporting its rejection as an invalid request.
+  if (value && typeof value === "object" && !Array.isArray(value) && value.resolverVersion === undefined)
+    fail("resolver_too_old", "Ask's internal resolver predates version 0.2.0");
   const item = exactKeys(value,
-    new Set(["schema", "requestId", "operation", "requestedRelation", "status",
-      "candidates", "verifiedTarget", "evidence", "reasons"]),
-    new Set(["schema", "requestId", "operation", "status", "candidates", "evidence", "reasons"]),
+    new Set(["schema", "resolverVersion", "requestId", "operation", "requestedRelation", "status",
+      "candidates", "verifiedTarget", "evidence", "reasons", "transports"]),
+    new Set(["schema", "resolverVersion", "requestId", "operation", "status", "candidates", "evidence", "reasons"]),
     "response");
   if (item.schema !== RESPONSE_SCHEMA)
     fail("resolver_dependency_incompatible", "agent-window-resolver response schema is incompatible");
+  boundedText(item.resolverVersion, "response.resolverVersion", 5, 32, /^[0-9]+\.[0-9]+\.[0-9]+$/);
+  if (item.transports !== undefined) {
+    if (item.status !== "verified" || request.probeTransports !== true)
+      fail("resolver_response_incompatible", "transports were not requested");
+    validateTransports(item.transports);
+  }
   if (item.requestId !== request.requestId || item.operation !== request.operation
       || !operations.has(item.operation) || !statuses.has(item.status))
     fail("resolver_response_incompatible", "resolver response requestId, operation, or status is incompatible");

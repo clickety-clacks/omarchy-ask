@@ -15,6 +15,10 @@ import { request as httpsRequest } from "node:https";
 import {
   ResolverClientError, canonicalTicks, createResolverClient,
 } from "./agent-window-resolver.js";
+import {
+  capabilityDirectory, capabilityPath, chooseTransport, readCapabilities,
+  recordCapabilities, transportLaunchArgv, transportPreference,
+} from "./transport-policy.js";
 
 const execFileAsync = promisify(execFile);
 const reconnectDelays = [1000, 2000, 4000, 8000, 16000, 30000];
@@ -28,7 +32,7 @@ const safeSocketPath = /^\/[^\u0000-\u001f\u007f]{1,4095}$/;
 const addressPattern = /^0x[0-9a-f]+$/i;
 const machinePattern = /^[A-Za-z0-9][A-Za-z0-9_.:-]*$/;
 
-let config = { host: "", port: 0 };
+let config = { host: "", port: 0, transport: "auto" };
 let stream = null;
 let generation = 0;
 let reconnectTimer = null;
@@ -289,7 +293,10 @@ function acceptSnapshot(value) {
 
 function configure(next) {
   stopping = false;
-  config = { host: String(next.host || "").trim(), port: Number(next.port || 0) };
+  config = {
+    host: String(next.host || "").trim(), port: Number(next.port || 0),
+    transport: transportPreference(next.transport),
+  };
   generation++;
   closeStream();
   if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
@@ -471,31 +478,29 @@ function commandLine(args) {
   return args.map(shellQuote).join(" ");
 }
 
-// The shared resolver verifies the remote identity before this launcher is
-// reached. Mosh must still start inside the terminal because it needs a TTY.
-// Only a nonzero mosh startup failure falls through to SSH; a normal session
-// close is not treated as a reason to reconnect.
-function transportLaunchScript(host, location) {
-  const remote = tmuxAttachCommand({ tmux: location });
-  const mosh = commandLine(["mosh", "--", host, "sh", "-lc", remote]);
-  // tmux attach is an interactive program. Force a PTY for the SSH fallback;
-  // the separate identity preflight intentionally remains non-interactive.
-  const ssh = commandLine(["ssh", "-tt", "--", host, remote]);
-  return [
-    "if command -v mosh >/dev/null 2>&1; then",
-    `  mosh_status=0; ${mosh} || mosh_status=$?`,
-    '  if [ "$mosh_status" -ne 0 ]; then',
-    `    exec ${ssh}`,
-    "  fi",
-    "else",
-    `  exec ${ssh}`,
-    "fi",
-  ].join("\n");
-}
+// The shared resolver verifies the remote identity before a launch. et and
+// mosh need a TTY, so they start inside the terminal; transportLaunchArgv's
+// launcher falls back to ssh only when they fail to start, never after a
+// normal session exit.
 
 async function which(command) {
   try { const result = await execFileAsync("sh", ["-lc", `command -v ${shellQuote(command)}`], { timeout: 500 }); return result.stdout.trim(); }
   catch { return ""; }
+}
+
+// One login shell answers for all three clients, with more time than a single
+// lookup: a slow profile must not make a missing ssh a new way to fail.
+async function transportClients() {
+  const names = ["et", "mosh", "ssh"];
+  try {
+    const script = names.map(name => `command -v ${name} >/dev/null 2>&1 && echo ${name}`).join("; ");
+    const { stdout } = await execFileAsync("sh", ["-lc", `${script}; true`], { timeout: 3000 });
+    const found = new Set(stdout.split(/\s+/));
+    return Object.fromEntries(names.map(name => [name, found.has(name)]));
+  } catch {
+    // If the profile cannot answer, assume the clients the old ladder assumed.
+    return { et: false, mosh: Boolean(await which("mosh")), ssh: true };
+  }
 }
 
 async function spawnDetached(command, args) {
@@ -527,8 +532,16 @@ async function showNotice(agent, reason) {
       ? "Ask cannot activate agent windows because its bundled resolver returned an incompatible response."
       : reason === "resolver_dependency_unavailable"
         ? "Ask cannot activate agent windows because its internal Python resolver failed."
+      : reason === "resolver_too_old"
+        ? "Ask cannot activate agent windows because its bundled resolver is older than this version of Ask expects."
       : reason === "resolver_window_snapshot_unavailable"
         ? "Ask cannot activate this agent because the current desktop window snapshot is unavailable or incomplete."
+      : reason === "no_transport_client"
+        ? `Agent ${title} on ${machine} cannot be reached: none of et, mosh or ssh is installed here.`
+      : /^(et|mosh|ssh)_client_missing$/.test(reason)
+        ? `Ask is set to connect with ${reason.split("_")[0]}, but it is not installed here.`
+      : reason === "local_requires_local_target"
+        ? `Ask is set to transport "local", but agent ${title} runs on ${machine}.`
       : reason === "no_tmux"
     ? `Agent ${title} on ${machine} cannot be attached because it is not running in a tmux session.`
     : `Agent ${title} on ${machine} could not be connected. The network or tmux session may be unavailable.`;
@@ -569,6 +582,8 @@ async function activate(id, dependencies = {}) {
   const collectActiveAddress = dependencies.activeWindowAddress || activeWindowAddress;
   const launchDetached = dependencies.spawnDetached || spawnDetached;
   const findExecutable = dependencies.which || which;
+  const capabilities = dependencies.capabilityDirectory ?? capabilityDirectory();
+  const preference = dependencies.transport ?? config.transport;
   const notify = dependencies.showNotice || showNotice;
   const output = dependencies.emit || emit;
   const reject = async (agent, reason, noticeReason = "connection_failed") => {
@@ -649,14 +664,21 @@ async function activate(id, dependencies = {}) {
   if (!safeHost.test(String(agent.machine || "")))
     return reject(agent, "invalid_machine");
 
+  const local = localMachineMatches(agent.machine);
+  let recorded = local ? null : readCapabilities(capabilities, agent.machine);
   let verified;
   try {
-    verified = await resolverApi.request(resolverRequest("verify-target", agent, []));
+    verified = await resolverApi.request(resolverRequest("verify-target", agent, [],
+      local || recorded ? {} : { probeTransports: true }));
   } catch (error) {
     const reason = error instanceof ResolverClientError ? error.code : "resolver_failed";
     return reject(agent, reason, reason);
   }
   if (verified.status !== "verified") return reject(agent, "target_unavailable");
+  // Discovery informs auto only; without a usable observation the launch
+  // proceeds exactly as mosh-first did.
+  if (!local && recordCapabilities(capabilities, agent.machine, verified))
+    recorded = readCapabilities(capabilities, agent.machine);
   const current = lookupAgent(identity);
   if (!current || !sameAgentTarget(agent, current) || !isConnected()
       || current.hubSourceState !== "reporting" || current.presence?.state !== "present")
@@ -667,27 +689,25 @@ async function activate(id, dependencies = {}) {
 
   const terminal = await findExecutable("ghostty") || await findExecutable("xdg-terminal-exec");
   if (!terminal) return reject(current, "terminal_unavailable");
-  let transport;
-  let transportArgs;
-  const local = localMachineMatches(current.machine);
-  const mosh = local ? "" : await findExecutable("mosh");
+  const clients = local ? {} : dependencies.which
+    ? Object.fromEntries(await Promise.all(["et", "mosh", "ssh"]
+      .map(async name => [name, Boolean(await findExecutable(name))])))
+    : await transportClients();
+  const choice = chooseTransport(preference, local, clients, recorded);
+  if (choice.unavailable) return reject(current, choice.unavailable, choice.unavailable);
   // Recheck the exact roster target after all asynchronous discovery and
   // immediately before constructing and dispatching the mutating launch.
   const finalAgent = lookupAgent(identity);
   if (!finalAgent || !sameAgentTarget(current, finalAgent) || !isConnected()
       || finalAgent.hubSourceState !== "reporting" || finalAgent.presence?.state !== "present")
     return reject(finalAgent || current, "connection_changed");
-  if (local) {
-    transport = "local";
-    transportArgs = ["-e", "sh", "-lc", tmuxAttachCommand({ tmux: attachLocation })];
-  } else if (mosh) {
-    transport = "mosh";
-    transportArgs = ["-e", "sh", "-lc", transportLaunchScript(finalAgent.machine, attachLocation)];
-  } else {
-    transport = "ssh";
-    transportArgs = ["-e", "ssh", "-tt", "--", finalAgent.machine,
-      tmuxAttachCommand({ tmux: attachLocation })];
-  }
+  const { transport } = choice;
+  if (!local && String(finalAgent.machine).startsWith("-")) return reject(finalAgent, "invalid_machine");
+  const transportArgs = local
+    ? ["-e", "sh", "-lc", tmuxAttachCommand({ tmux: attachLocation })]
+    : ["-e", ...transportLaunchArgv(transport, choice.fallback, finalAgent.machine,
+      tmuxAttachCommand({ tmux: attachLocation }), recorded?.etPort ?? null,
+      capabilityPath(capabilities, finalAgent.machine) || "")];
   if (await launchDetached(terminal, transportArgs))
     return output({ type: "activation", id, ok: true, existing: false, transport });
   return reject(finalAgent, "launch_failed");
@@ -705,7 +725,7 @@ input.on("line", (line) => {
 // the same activation path with controlled read-only and side-effect deps.
 export {
   activate, agentIdentity, resolveFocusAddress, sameAgentTarget,
-  sameWindowIdentity, tmuxAttachCommand, transportLaunchScript,
+  sameWindowIdentity, tmuxAttachCommand,
   chooseExistingCandidate,
 };
 

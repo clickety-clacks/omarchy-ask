@@ -42,11 +42,13 @@ settings fields must survive an Ask settings save.
 
 ## Opening an agent
 
-Existing-window resolution must trace terminal, tmux, SSH, and mosh identity
+Existing-window resolution must trace terminal, tmux, SSH, mosh and et identity
 to the selected agent, not rely on a title or machine-name guess. A verified
 existing local window is focused on its workspace without changing its
-connection. Otherwise a new terminal attaches to the agent's tmux pane,
-preferring mosh with SSH fallback and never detaching existing clients.
+connection. Otherwise a new terminal attaches to the agent's tmux pane over
+the transport chosen by `agentdHub.transport` (see README, "Opening a remote
+agent"), falling back to SSH when et or mosh fail to start, and never
+detaching existing clients.
 
 A no-tmux notice identifies the agent's machine. Network or authentication
 failure must not be reported as proof that the agent has no tmux session.

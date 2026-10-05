@@ -51,6 +51,7 @@ async function replay(transport, socketKind, naming) {
     focus: async address => { focus.push(address); return true; },
     emit: event => events.push(event),
     showNotice: async () => assert.fail("unexpected notice"),
+    capabilityDirectory: join(directory, "capabilities"), transport: "auto",
     which: async name => name === "mosh" && transport === "ssh" ? "" : join(directory, name),
     resolver: { request: async request => {
       requests.push(request.operation);
@@ -72,11 +73,12 @@ async function replay(transport, socketKind, naming) {
       assert.equal(args[0], "-e");
       if (transport === "mosh") {
         assert.deepEqual(args.slice(1, 3), ["sh", "-lc"]);
-        assert.equal(args.length, 4);
-        // Execute the exact production fallback script, but without login
+        assert.equal(args[4], "transport-launch");
+        assert.equal(args.at(-1), "mosh");
+        // Execute the exact production fallback launcher, but without login
         // profiles. Both transport executables are recording stubs; neither
         // executes its remote command or contacts a machine.
-        const result = spawnSync("/bin/sh", ["-c", args[3]], {
+        const result = spawnSync("/bin/sh", args.slice(2), {
           env: { PATH: directory, ASK_REPLAY_CAPTURE: capture },
           encoding: "utf8", timeout: 2000, maxBuffer: 65536,
         });

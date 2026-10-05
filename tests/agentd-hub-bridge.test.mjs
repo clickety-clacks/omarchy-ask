@@ -12,7 +12,8 @@ function api(expression) {
   const script = `
     import { hostname } from "node:os";
     import { readFile } from "node:fs/promises";
-    import { agentIdentity, transportLaunchScript, tmuxAttachCommand,
+    import { transportLaunchArgv } from ${JSON.stringify(fileURLToPath(new URL("../bridge/transport-policy.js", import.meta.url)))};
+    import { agentIdentity, tmuxAttachCommand,
       resolveFocusAddress, sameAgentTarget, activate, chooseExistingCandidate } from ${JSON.stringify(bridge)};
     import { ResolverClientError } from ${JSON.stringify(fileURLToPath(new URL("../bridge/agent-window-resolver.js", import.meta.url)))};
     const value = await (${expression});
@@ -63,32 +64,36 @@ test("agent identity is structured and cannot collide through separators", () =>
   assert.deepEqual(JSON.parse(result[0]), ["a|b", "c", 4, "5"]);
 });
 
-test("mosh launcher falls back only on nonzero startup and not normal exit", () => {
+test("et and mosh launchers fall back only on a failed start, forgetting a reachable host's record", () => {
   const directory = mkdtempSync(join(tmpdir(), "ask-agent-transport-"));
   const log = join(directory, "transport.log");
+  const stale = join(directory, "gibson.json");
   const writeFake = (name) => {
     const path = join(directory, name);
-    writeFileSync(path, `#!/bin/sh\nprintf '%s\\n' ${name} >> "$ASK_TRANSPORT_LOG"\nif [ "${name}" = "mosh" ]; then exit "${"$ASK_MOSH_EXIT"}"; fi\nexit 0\n`);
+    // ssh's BatchMode reachability check ("true") succeeds unless told not to.
+    writeFileSync(path, `#!/bin/sh\nprintf '%s %s\\n' ${name} "$*" >> "$ASK_TRANSPORT_LOG"\n`
+      + `case "$*" in *BatchMode*) exit "$ASK_SSH_CHECK_EXIT";; esac\n`
+      + `if [ "${name}" != ssh ]; then exit "$ASK_PRIMARY_EXIT"; fi\nexit 0\n`);
     chmodSync(path, 0o755);
   };
-  writeFake("mosh");
-  writeFake("ssh");
-  const script = api(`transportLaunchScript("gibson", { session: "ask", windowIndex: 0, paneId: "%1" })`);
-  assert.match(script, /'ssh' '-tt'/);
-  const environment = {
-    ...process.env, PATH: `${directory}:${process.env.PATH || ""}`, ASK_TRANSPORT_LOG: log,
+  for (const name of ["et", "mosh", "ssh"]) writeFake(name);
+  const remote = api(`tmuxAttachCommand({ tmux: { session: "ask", windowIndex: 0, paneId: "%1" } })`);
+  const run = (primary, primaryExit, sshCheckExit) => {
+    writeFileSync(log, ""); writeFileSync(stale, "{}");
+    const argv = api(`transportLaunchArgv(${JSON.stringify(primary)}, "ssh", "gibson", ${JSON.stringify(remote)}, 2022, ${JSON.stringify(stale)})`);
+    const result = spawnSync(argv[0], argv.slice(1), { encoding: "utf8", timeout: 3000, env: {
+      ...process.env, PATH: `${directory}:${process.env.PATH || ""}`, ASK_TRANSPORT_LOG: log,
+      ASK_PRIMARY_EXIT: String(primaryExit), ASK_SSH_CHECK_EXIT: String(sshCheckExit) } });
+    assert.equal(result.status, 0, result.stderr);
+    return { calls: readFileSync(log, "utf8").trim().split("\n").map(line => line.split(" ")[0]),
+      kept: spawnSync("test", ["-e", stale]).status === 0 };
   };
-  const normal = spawnSync("sh", ["-c", script], {
-    encoding: "utf8", env: { ...environment, ASK_MOSH_EXIT: "0" }, timeout: 3000,
-  });
-  assert.equal(normal.status, 0, normal.error?.message || normal.stderr || "normal launcher failed");
-  assert.equal(readFileSync(log, "utf8"), "mosh\n");
-  writeFileSync(log, "");
-  const failed = spawnSync("sh", ["-c", script], {
-    encoding: "utf8", env: { ...environment, ASK_MOSH_EXIT: "7" }, timeout: 3000,
-  });
-  assert.equal(failed.status, 0, failed.error?.message || failed.stderr || "fallback launcher failed");
-  assert.equal(readFileSync(log, "utf8"), "mosh\nssh\n");
+  for (const primary of ["et", "mosh"]) {
+    assert.deepEqual(run(primary, 0, 0), { calls: [primary], kept: true }, `${primary} normal exit`);
+    assert.deepEqual(run(primary, 7, 0), { calls: [primary, "ssh", "ssh"], kept: false }, `${primary} failed start`);
+    assert.deepEqual(run(primary, 7, 255), { calls: [primary, "ssh", "ssh"], kept: true }, `${primary} unreachable host`);
+  }
+  assert.match(readFileSync(log, "utf8"), /ssh -tt -- gibson sh -lc/);
   rmSync(directory, { recursive: true, force: true });
 });
 
@@ -132,6 +137,7 @@ function activationScenario(mode) {
       showNotice:async(a,r)=>notices.push(r), emit:e=>events.push(e),
       which:async name=>{if(name==='mosh' && mode==='moved-during-discovery')agent={...agent,tmux:{...agent.tmux,paneId:'%8'}};return '/fake/'+name},
       spawnDetached:async(...args)=>{launches.push(args);return true},
+      capabilityDirectory:'/nonexistent/ask-transport-test', transport:'auto',
       resolver:{request:async r=>{
         calls.push(r.operation);
         if(mode==='dependency-failure')throw new Error('missing dependency');
@@ -191,4 +197,43 @@ test("dependency failure during revalidation retains its truthful notice", () =>
   assert.equal(result.events[0].reason,'resolver_dependency_missing');
   assert.equal(result.focused.length,0);
   assert.equal(result.launches.length,0);
+});
+
+test("first activation probes transports, records them, and auto then uses et", () => {
+  const directory = mkdtempSync(join(tmpdir(), "ask-transport-record-"));
+  try {
+    const result = api(`(async () => {
+      const agent = { machine: 'remote.example', instanceId: 'i', id: {pid:200,startTimeTicks:'42'},
+        tmux:{session:'agents',windowIndex:'0',paneId:'%7'}, hubSourceState:'reporting',presence:{state:'present'} };
+      const requests = [], launches = [], events = [];
+      const deps = {
+        lookupAgent:()=>agent, isHubConnected:()=>true, activeWindowAddress:async()=>'',
+        compositorWindows:async()=>[], hyprClientsSnapshot:async()=>[], readStartTicks:async()=>'',
+        focus:async()=>true, showNotice:async()=>{}, emit:e=>events.push(e),
+        which:async name=>'/fake/'+name, spawnDetached:async(...args)=>{launches.push(args);return true},
+        capabilityDirectory:${JSON.stringify(directory)}, transport:'auto',
+        resolver:{request:async r=>{
+          requests.push({operation:r.operation, probe:r.probeTransports===true});
+          if(r.operation==='verify-target')return {status:'verified', resolverVersion:'0.2.0',
+            verifiedTarget:{identity:r.target.identity,location:{kind:'tmux',tmux:{...r.target.tmux,socket:{kind:'path',value:'/test/proved.sock'}}}},
+            ...(r.probeTransports?{transports:{state:'complete',
+              ssh:{state:'available',code:'ssh_probe_succeeded'},
+              et:{state:'available',code:'et_reachable',port:4022},
+              mosh:{state:'available',code:'mosh_udp_passing'}}}:{})};
+          return {status:'unresolved',candidates:[],reasons:[{code:'candidate_count'}]};
+        }},
+      };
+      await activate(agentIdentity(agent), deps);
+      await activate(agentIdentity(agent), deps);
+      return {requests, launches, events};
+    })()`);
+    assert.deepEqual(result.requests.filter(r => r.operation === "verify-target").map(r => r.probe), [true, false]);
+    assert.deepEqual(result.events.map(e => e.transport), ["et", "et"]);
+    const args = result.launches[0][1];
+    assert.deepEqual(args.slice(0, 3), ["-e", "sh", "-lc"]);
+    assert.deepEqual(args.slice(4, 6), ["transport-launch", "remote.example"]);
+    assert.equal(args[7], "4022");
+    assert.equal(args[8], join(directory, "remote.example.json"));
+    assert.equal(args.at(-1), "et");
+  } finally { rmSync(directory, { recursive: true, force: true }); }
 });

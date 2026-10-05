@@ -57,7 +57,8 @@ jobs:
           npm ci --ignore-scripts --prefix bridge
           node --test bridge/harness-policy.test.js bridge/harness-errors.test.js \
             bridge/image-paste.test.js tests/compositor.test.mjs \
-            tests/shortcut-policy.test.cjs tests/shortcut-platform.test.cjs
+            tests/shortcut-policy.test.cjs tests/shortcut-platform.test.cjs \
+            tests/transport-policy.test.mjs tests/agent-window-resolver.test.mjs
 
       - name: Validate source
         run: |
@@ -72,6 +73,7 @@ jobs:
           node --check bridge/reveal.js
           node --check bridge/compositor.js
           node --check bridge/agentd-hub.js
+          node --check bridge/transport-policy.js
           node --check bridge/file-search.js
 
       - name: Publish GitHub release
