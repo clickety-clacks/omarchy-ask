@@ -67,7 +67,7 @@ test("agent identity is structured and cannot collide through separators", () =>
 test("et and mosh launchers fall back only on a failed start, forgetting a reachable host's record", () => {
   const directory = mkdtempSync(join(tmpdir(), "ask-agent-transport-"));
   const log = join(directory, "transport.log");
-  const stale = join(directory, "gibson.json");
+  const stale = join(directory, "atlas.json");
   const writeFake = (name) => {
     const path = join(directory, name);
     // ssh's BatchMode reachability check ("true") succeeds unless told not to.
@@ -80,7 +80,7 @@ test("et and mosh launchers fall back only on a failed start, forgetting a reach
   const remote = api(`tmuxAttachCommand({ tmux: { session: "ask", windowIndex: 0, paneId: "%1" } })`);
   const run = (primary, primaryExit, sshCheckExit) => {
     writeFileSync(log, ""); writeFileSync(stale, "{}");
-    const argv = api(`transportLaunchArgv(${JSON.stringify(primary)}, "ssh", "gibson", ${JSON.stringify(remote)}, 2022, ${JSON.stringify(stale)})`);
+    const argv = api(`transportLaunchArgv(${JSON.stringify(primary)}, "ssh", "atlas", ${JSON.stringify(remote)}, 2022, ${JSON.stringify(stale)})`);
     const result = spawnSync(argv[0], argv.slice(1), { encoding: "utf8", timeout: 3000, env: {
       ...process.env, PATH: `${directory}:${process.env.PATH || ""}`, ASK_TRANSPORT_LOG: log,
       ASK_PRIMARY_EXIT: String(primaryExit), ASK_SSH_CHECK_EXIT: String(sshCheckExit) } });
@@ -93,7 +93,7 @@ test("et and mosh launchers fall back only on a failed start, forgetting a reach
     assert.deepEqual(run(primary, 7, 0), { calls: [primary, "ssh", "ssh"], kept: false }, `${primary} failed start`);
     assert.deepEqual(run(primary, 7, 255), { calls: [primary, "ssh", "ssh"], kept: true }, `${primary} unreachable host`);
   }
-  assert.match(readFileSync(log, "utf8"), /ssh -tt -- gibson sh -lc/);
+  assert.match(readFileSync(log, "utf8"), /ssh -tt -- atlas sh -lc/);
   rmSync(directory, { recursive: true, force: true });
 });
 
@@ -110,7 +110,7 @@ test("final focus resolution rejects a closed or reused Hypr window", () => {
 
 test("final focus resolution rejects a roster removal or moved tmux target", () => {
   const base = {
-    machine: "gibson", instanceId: "i", id: { pid: 42, startTimeTicks: 9 },
+    machine: "atlas", instanceId: "i", id: { pid: 42, startTimeTicks: 9 },
     tmux: { session: "ask", windowIndex: 0, paneId: "%1" },
   };
   const moved = { ...base, tmux: { session: "ask", windowIndex: 1, paneId: "%2" } };

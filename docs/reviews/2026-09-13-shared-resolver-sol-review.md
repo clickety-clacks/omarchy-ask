@@ -27,7 +27,7 @@ focused tests, and operator documentation at these final hashes:
   `ece5bfdfff522ee3f7744bea3a268f7bf6c357a5194801f323844b2ac183cfba`
 
 I compared the adapter against the frozen v1 schema and contract from the
-shared `agent-window-resolver` source on Plumbus. I did not execute its Linux
+shared `agent-window-resolver` source on Testbed. I did not execute its Linux
 collector or perform a live topology probe.
 
 ## Acceptance findings
@@ -110,7 +110,7 @@ use synthetic local child processes; they do not execute the shared Linux
 collector.
 
 The owner additionally reported **44/44** combined local checks and **26/26**
-controlled isolated-copy checks on Plumbus at the reviewed state. Those runs
+controlled isolated-copy checks on Testbed at the reviewed state. Those runs
 are supporting owner evidence, not independently repeated live checks in this
 review.
 

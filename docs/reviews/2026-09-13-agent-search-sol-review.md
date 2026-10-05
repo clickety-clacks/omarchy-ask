@@ -120,13 +120,13 @@ verdict:
 ## Evidence
 
 - Local Agentd v0.3.2 was queried read-only; scans were complete. The actual
-  osanwe Agentd identity `pid=717058,startTimeTicks=84458215` at `ask:1/%1`
+  lumen Agentd identity `pid=717058,startTimeTicks=84458215` at `ask:1/%1`
   resolved through production `localTopology/findMatch` to the mapped Ghostty
   window `pid=696768`. No focus or pane-content access occurred.
-- A real Gibson Agentd identity in `drift:0/%110` resolved read-only through an
-  ordinary osanwe Ghostty to a session-only mosh launch and the correct terminal
+- A real Atlas Agentd identity in `drift:0/%110` resolved read-only through an
+  ordinary lumen Ghostty to a session-only mosh launch and the correct terminal
   PID in about 3.0 seconds. No focus, attach, or transport mutation occurred.
-- A current Gibson attachment preflight returned a bounded topology snapshot
+- A current Atlas attachment preflight returned a bounded topology snapshot
   and proved exact PID/start ticks and pane ancestry for the advertised target.
   Pure negative cases reject stale ticks, inactive panes, ambiguity, wrong
   remote panes, wrong endpoint tuples, historical argv pointing at another
@@ -145,7 +145,7 @@ verdict:
   into `MenuSearch`: appearance, unreachable update, and complete removal.
   Helper SIGKILL recovery restarted the child while keeping the last-known
   roster visible as unreachable until a fresh valid frame.
-- Actual Ask-manager persistence on isolated Plumbus Wayland saved and reloaded
+- Actual Ask-manager persistence on isolated Testbed Wayland saved and reloaded
   address/port with zero conversations while preserving unrelated top-level and
   nested settings. It used a temporary HOME/source copy and no installed edits,
   visible user window, or model prompt.
@@ -158,7 +158,7 @@ verdict:
   unclipped endpoint fields and five summaries. Delegate source routes a mouse
   click through the same `menuIndex` plus `menuActivate` path; physical pointer
   injection was not separately repeated. See `2026-09-13-agent-search-ui.md`.
-- A disposable real PTY attachment used mosh end to end on Plumbus and reached
+- A disposable real PTY attachment used mosh end to end on Testbed and reached
   the exact target pane; normal session exit returned zero and did not invoke
   SSH. A second disposable PTY run forced mosh to exit 23 and verified real SSH
   fallback with `-tt` to the exact pane. Owned clients, servers, and tmux
@@ -170,14 +170,14 @@ verdict:
 
 ## Residual environment and delivery gaps
 
-- Deployment documents still state that the production Agentd Hub on Gibson is
+- Deployment documents still state that the production Agentd Hub on Atlas is
   pending the explicit-host release decision. No live production-Hub acceptance,
   deployment, daemon mutation, release, or installed-plugin change is claimed.
 - Published Agentd v0.3.2 `TmuxLocation` has no socket field, so custom-socket
   handling in Ask is defensive/additive but cannot be demonstrated from the
   deployed Agentd schema.
 - Ordinary live SSH-window association has exact endpoint-tuple coverage and
-  was checked against Gibson's real metadata constraints, but no suitable
+  was checked against Atlas's real metadata constraints, but no suitable
   pre-existing SSH terminal was available for a full read-only end-to-end
   resolver match. The equivalent existing-window path was demonstrated through
   a real session-only mosh terminal.

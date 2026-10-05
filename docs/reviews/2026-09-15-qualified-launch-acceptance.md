@@ -1,11 +1,11 @@
-# Qualified launch/repeat acceptance on Plumbus
+# Qualified launch/repeat acceptance on Testbed
 
 The corrected maintained resolver passes the launch-and-repeat regression.
-No osanwe tests, installation, or restart occurred during this validation.
+No lumen tests, installation, or restart occurred during this validation.
 
 ## Product behavior observed
 
-Both final live runs on Plumbus completed with exit 0:
+Both final live runs on Testbed completed with exit 0:
 
 | Transport | Initial terminal launches | tmux attachments | Repeated selections | New launches on repeats | Cleanup |
 | --- | --- | --- | --- | --- | --- |
@@ -40,7 +40,7 @@ alias/name fallback from masking the defect. With the pre-fix collector
 mosh/path/distinct fail on an attempted second terminal launch. With the
 corrected maintained source, the same cases pass. This supersedes the initial
 four-case replay, whose parenthesized/equal names masked the positive case.
-The 33 existing Node adapter/client checks also passed on Plumbus.
+The 33 existing Node adapter/client checks also passed on Testbed.
 
 ## Reviewed and executed source
 
@@ -52,7 +52,7 @@ The 33 existing Node adapter/client checks also passed on Plumbus.
 
 Independent Sol high static review covered the live fixture and its cleanup
 corrections before the corresponding runs. All tests ran in the isolated
-Plumbus stage `/tmp/ask-qualified-roundtrip.hO7xDw`. Negative controls ran in
+Testbed stage `/tmp/ask-qualified-roundtrip.hO7xDw`. Negative controls ran in
 `/tmp/ask-qualified-baseline.ahzHt7`. Production modules remained frozen during
 fixture corrections. Other five bundled modules match canonical unchanged.
 
@@ -60,12 +60,12 @@ fixture corrections. Other five bundled modules match canonical unchanged.
 
 The roster is synthetic and attachment preflight uses the private fixture's
 observed PID/start/session/window/pane. This is not a popup mouse-click test,
-real harness-account validation, or the original osanwe agent selection.
+real harness-account validation, or the original lumen agent selection.
 Mosh is native but uses loopback-only `--local` bootstrap: it does not test
 remote SSH bootstrap or network roaming. The SSH case separately uses real
 private loopback SSH. No real user's session or default tmux socket is touched.
 
-On an authorized empty Plumbus desktop, provide its current verified Hyprland
+On an authorized empty Testbed desktop, provide its current verified Hyprland
 and Wayland environment, then run from the staged repository:
 
 ```sh
@@ -83,15 +83,15 @@ installation workflow and restart the shell, not patch individual installed
 modules or installation-record hashes. The qualified-target correction is
 was source-only at completion of the runtime gates.
 
-## Subsequent complete installation on osanwe
+## Subsequent complete installation on lumen
 
 Installed complete local build `b0ec28731d0e109ed825e31d59f0806b7f38a160`
 through `omarchy plugin update clickety-clacks.ask --yes`, followed by
 `npm ci --prefix <installed-plugin>/bridge --no-audit --no-fund` and
 `omarchy restart shell`. This is an unreleased local build, not a release cut.
-Build origin: `/home/mike/.local/state/ask-qualified-build.lqegQ4`.
+Build origin: `~/.local/state/ask-qualified-build.lqegQ4`.
 Previous complete installation and settings backup:
-`/home/mike/.local/state/ask-qualified-backup.q9Ul6e`.
+`~/.local/state/ask-qualified-backup.q9Ul6e`.
 
 The initial standard update rolled back because plugin validation rejected
 existing npm `.bin` symlinks. Moved that dependency directory into the backup,
@@ -102,5 +102,5 @@ Post-install read-only checks confirmed clean installed Git status at the
 build commit, all seven resolver modules identical to canonical, unchanged
 `ask.json` and `shell.json`, shell ping `ok`, Ask enabled, the Hub bridge running
 from the installed plugin, and no Hyprland configuration errors. No automated
-agent activation tests ran on osanwe; actual user selection there remains the
-user-facing confirmation. Plumbus desktop was released after verified cleanup.
+agent activation tests ran on lumen; actual user selection there remains the
+user-facing confirmation. Testbed desktop was released after verified cleanup.

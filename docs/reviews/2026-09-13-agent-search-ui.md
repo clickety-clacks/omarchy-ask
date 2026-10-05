@@ -1,11 +1,11 @@
-# Agent search/settings — isolated Plumbus UI verification
+# Agent search/settings — isolated Testbed UI verification
 
 Date: 2026-09-13 (2:30–2:45 PM PT)
 
 This is bounded UI evidence for the completed search/settings work. It uses a
-disposable nested Hyprland on Plumbus and a deterministic fake ACP bridge; it
+disposable nested Hyprland on Testbed and a deterministic fake ACP bridge; it
 does not authenticate, contact a model, use the production Agentd Hub, or touch
-the normal Plumbus compositor/user shell.
+the normal Testbed compositor/user shell.
 
 ## Fixture
 
@@ -78,7 +78,7 @@ The Quickshell log had no QML runtime errors. The only startup warnings were
 the expected temporary fixture warning that native shortcut-module loading was
 disabled and the source-tree MenuModel scanner warning.
 
-No installed user plugin, settings, normal shell, or normal Plumbus compositor
+No installed user plugin, settings, normal shell, or normal Testbed compositor
 was modified. The post-run read-only check did show an experimental
 `ask-shortcut-scope` plugin already listed on original compositor PID 1038; this
 lane neither loaded nor unloaded it. The disposable nested compositor and QS

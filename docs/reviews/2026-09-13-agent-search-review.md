@@ -3,7 +3,7 @@
 Status: implementation accepted after Luna xhigh implementation and Sol high
 independent review. The chronological failures below were intermediate
 findings; subsequent fixes and retests are recorded explicitly. No release
-or installed osanwe deployment was performed.
+or installed lumen deployment was performed.
 
 ## Agreed behavior
 
@@ -41,7 +41,7 @@ or installed osanwe deployment was performed.
   Escape/Return behavior and keyboard routing remain correct.
 - QML integration: buckets can be opened, keyboard and click activation agree,
   pushed roster changes update results without submitting a model prompt.
-- Keep installed osanwe image work intact; distinguish source tests, desktop
+- Keep installed lumen image work intact; distinguish source tests, desktop
   integration tests, and actual live hub verification in final reporting.
 
 ## Baseline evidence
@@ -113,12 +113,12 @@ change may clear them. Fixture processes/listener were cleaned up.
 
 Search/settings subsequently received a no-code-blocking-findings verdict
 from Sol after independent review/tests. Parent real-Wayland manager testing
-on Plumbus (`/tmp/ask-hub-ui.YY1ZCQ/manager.qml`) saved a test endpoint, restarted
+on Testbed (`/tmp/ask-hub-ui.YY1ZCQ/manager.qml`) saved a test endpoint, restarted
 the actual `Ask.qml` manager, and observed the same host/port with zero
 conversations. Both an unknown top-level image-test object and an unknown
 nested `agentdHub.extra` field survived. Native module loading was disabled
 explicitly in the test-only Node shim; no visible window or model was opened.
-The shim was corrected to use Plumbus's discovered mise Node executable rather
+The shim was corrected to use Testbed's discovered mise Node executable rather
 than assuming `/usr/bin/node`, and the manager restart was rerun successfully.
 This tests persistence, not keyboard/visual settings interaction.
 
@@ -131,7 +131,7 @@ three `/events` requests for the initial/malformed/disconnect sequence and no
 polling or reconnect during a subsequent 31-second quiet period.
 
 Real PTY launch evidence: actual `transportLaunchScript()` attached to an
-isolated Plumbus tmux server (`ask-hub-transport-proof-20260913`) and exact
+isolated Testbed tmux server (`ask-hub-transport-proof-20260913`) and exact
 `proof:0.%0` pane. The client process was a child of `mosh-server`, proving
 mosh was actually used. The sleeping pane expired, launcher returned zero,
 and all owned server/client processes were gone; no SSH fallback followed
@@ -160,5 +160,5 @@ mosh and SSH-fallback attachments. See the independent and UI review artifacts
 for scope and environmental limitations.
 
 Owned test windows, nested compositor, helpers, and disposable tmux sessions
-were cleaned up. The installed osanwe plugin and user sessions were untouched.
+were cleaned up. The installed lumen plugin and user sessions were untouched.
 This work remains unreleased; production Hub deployment is separate and pending.

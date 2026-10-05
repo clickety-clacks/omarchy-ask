@@ -1,17 +1,17 @@
 # Launch-to-match regression preparation
 
 Final status: the corrected replay and both final live transport gates have
-now passed on Plumbus, including owned cleanup. See
+now passed on Testbed, including owned cleanup. See
 [final acceptance](2026-09-15-qualified-launch-acceptance.md). The chronological
 pending/failure notes below are retained as the audit trail, not current status.
 
 Status: source-only draft, not executed or accepted. Requires Yoohoo's
 reviewed qualified-target correction and test-machine authorization.
 
-## Plumbus replay checkpoint
+## Testbed replay checkpoint
 
 The updated replay `1cfc3241fa46006a40df0ba00678c43171bc35f9f56330e42837d7e42f25ddd5`
-passed all eight cases in `/tmp/ask-qualified-roundtrip.hO7xDw` on Plumbus.
+passed all eight cases in `/tmp/ask-qualified-roundtrip.hO7xDw` on Testbed.
 The helper remains `6575ce2f84dd5fd386bdd79f6f064c28cc59c8d644371df8b96df44431b72aac`.
 This supersedes the initial unrun status for the pure replay only.
 
@@ -19,25 +19,25 @@ Yoohoo's negative control identified that the original parenthesized session
 and equal display name masked the duplicate-launch bug through alias/name
 fallback. The replay now includes plain random session names with distinct
 random agent display names, while retaining equal-name conflict cases.
-Independent pre-fix checks in `/tmp/ask-qualified-baseline.ahzHt7` on Plumbus
+Independent pre-fix checks in `/tmp/ask-qualified-baseline.ahzHt7` on Testbed
 use collector `42db2f45` and resolver `24174377`; both SSH/path/distinct and
 mosh/path/distinct fail on an attempted second terminal launch, before the
 conflict assertions. The corrected package passes those same cases.
 
 Live SSH source `tests/agent-launch-roundtrip-live.py` is under static safety
 review, not executed yet. It likewise avoids matching display/session names.
-Live mosh launch/repeat remains outstanding. No osanwe tests or deployment.
+Live mosh launch/repeat remains outstanding. No lumen tests or deployment.
 
 ## First live SSH attempt: cleanup failure, not accepted
 
 The reviewed live fixture `38fbeafc4ce366af16bac6e2e588584db4a2939046fe03288b44c26fd88f5f55`
-ran on Plumbus. It raised during terminal cleanup, with no preceding behavior
+ran on Testbed. It raised during terminal cleanup, with no preceding behavior
 exception chain in the captured output. It emitted no behavior checkpoint, so
 do not promote that absence to accepted behavior evidence. Final traceback:
 
 ```text
 Traceback (most recent call last):
-  File "/home/mike/Projects/yoohoo-hub-work/tests/integration/private_sshd_fixture.py", line 276, in _process_identity
+  File "~/Projects/yoohoo-hub-work/tests/integration/private_sshd_fixture.py", line 276, in _process_identity
     actual = Path(os.readlink(proc / "exe")).resolve(strict=True)
                   ~~~~~~~~~~~^^^^^^^^^^^^
 FileNotFoundError: [Errno 2] No such file or directory: '/proc/14703/exe'
@@ -51,17 +51,17 @@ Traceback (most recent call last):
   File "/tmp/ask-qualified-roundtrip.hO7xDw/tests/agent-launch-roundtrip-live.py", line 188, in main
     private._terminate_identities(private._descendants(identity) + [identity], 3)
     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/mike/Projects/yoohoo-hub-work/tests/integration/private_sshd_fixture.py", line 359, in _terminate_identities
+  File "~/Projects/yoohoo-hub-work/tests/integration/private_sshd_fixture.py", line 359, in _terminate_identities
     live = [item for item in live if not _process_is_gone(item)]
                                          ~~~~~~~~~~~~~~~~^^^^^^
-  File "/home/mike/Projects/yoohoo-hub-work/tests/integration/private_sshd_fixture.py", line 318, in _process_is_gone
+  File "~/Projects/yoohoo-hub-work/tests/integration/private_sshd_fixture.py", line 318, in _process_is_gone
     raise error
-  File "/home/mike/Projects/yoohoo-hub-work/tests/integration/private_sshd_fixture.py", line 293, in _process_is_gone
+  File "~/Projects/yoohoo-hub-work/tests/integration/private_sshd_fixture.py", line 293, in _process_is_gone
     _assert_process(identity)
     ~~~~~~~~~~~~~~~^^^^^^^^^^
-  File "/home/mike/Projects/yoohoo-hub-work/tests/integration/private_sshd_fixture.py", line 286, in _assert_process
+  File "~/Projects/yoohoo-hub-work/tests/integration/private_sshd_fixture.py", line 286, in _assert_process
     current = _process_identity(identity.pid, identity.executable)
-  File "/home/mike/Projects/yoohoo-hub-work/tests/integration/private_sshd_fixture.py", line 278, in _process_identity
+  File "~/Projects/yoohoo-hub-work/tests/integration/private_sshd_fixture.py", line 278, in _process_identity
     raise PrivateSshdSafetyError(f"cannot resolve executable for {pid}") from error
 _yoohoo_private_sshd_fixture.PrivateSshdSafetyError: cannot resolve executable for 14703
 ```
@@ -70,7 +70,7 @@ Owned recovery: confirmed private tmux server PID 14596 from its exact socket
 and executable, then issued `kill-server` against that socket only; confirmed
 private SSH listener PID 14623 from its private pidfile and executable before
 TERM. Read-only inventory confirmed all three PIDs gone and Hypr clients `[]`.
-Preserved evidence roots on Plumbus (including generated private fixture keys,
+Preserved evidence roots on Testbed (including generated private fixture keys,
 not user credentials): `/tmp/ask-live-launch-uj8yiygg`,
 `/tmp/yoohoo-live-_makudyu`, and
 `/run/user/1000/yoohoo-private-sshd-74ce9r3a`.
@@ -82,7 +82,7 @@ review before retry; persistent uncertain identity still preserves state.
 
 ## Accepted live SSH retry
 
-After independent Sol closing approval, fixture `948762b3` passed on Plumbus
+After independent Sol closing approval, fixture `948762b3` passed on Testbed
 with exit 0. Explicit behavior and final cleanup records reported:
 
 ```json
@@ -107,7 +107,7 @@ is now under static review before execution. It uses real native mosh in
 loopback-only `--local` mode with Ask's exact attach command and actual client
 display argv. The owned mosh server is bound by private-tmux-client ancestry,
 PID/start identity, and exact loopback UDP port/inode using the maintained
-fixture helpers. It does not cover remote SSH bootstrap. No osanwe changes.
+fixture helpers. It does not cover remote SSH bootstrap. No lumen changes.
 
 ## First native mosh attempt: behavior complete, cleanup not accepted
 
@@ -123,7 +123,7 @@ Traceback (most recent call last):
   File "/tmp/ask-qualified-roundtrip.hO7xDw/tests/agent-launch-roundtrip-live.py", line 273, in main
     stop_proven(private._descendants(mosh_identity) + [mosh_identity])
                 ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^
-  File "/home/mike/Projects/yoohoo-hub-work/tests/integration/private_sshd_fixture.py", line 502, in _descendants
+  File "~/Projects/yoohoo-hub-work/tests/integration/private_sshd_fixture.py", line 502, in _descendants
     raise PrivateSshdSafetyError(
         f"process root changed during descendant scan: {root.pid}"
     )
@@ -149,7 +149,7 @@ into Ask source. All seven files were compared byte-for-byte; collector is
 and resolver is
 `0be324ff3bf9052182c7114b5976a0e6e3ab4696942b6f123da934b1268b65bb`.
 The source bundle-integrity test expectations were updated, not any installed
-files or installation records. Runtime acceptance still requires Plumbus.
+files or installation records. Runtime acceptance still requires Testbed.
 
 Files:
 
@@ -189,4 +189,4 @@ The next live gate must actually launch through Ask, wait for the resulting
 window/client, activate again, and verify focus/workspace and unchanged window
 and connection counts. No replacement of that live gate by these checks.
 
-No resolver source edits, installation, or osanwe test runs in this step.
+No resolver source edits, installation, or lumen test runs in this step.

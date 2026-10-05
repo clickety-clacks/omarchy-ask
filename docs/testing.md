@@ -37,7 +37,7 @@ and live desktop acceptance. A passing JSON-client test does not prove a
 particular existing window or remote connection can be resolved.
 
 The bundled Python integration has a separate read-only local-process check:
-`node --test tests/bundled-resolver-local.test.mjs`. Run it on Plumbus with
+`node --test tests/bundled-resolver-local.test.mjs`. Run it on Testbed with
 the bundled package present. It exercises the actual collector against the
 test's own process, including revalidation and wrong-start-tick rejection;
 it does not focus a window or contact a remote host. Do not count the
@@ -102,7 +102,7 @@ must not reenable submap management.
 The module in `hyprland/` is an in-progress integration, not a released install
 dependency. Build against the exact supported running Hyprland ABI with
 `make -C hyprland`; never load development builds into an active user desktop.
-The [plumbus evidence](reviews/2026-09-13-plumbus-shortcut-scope.md) records the
+The [testbed evidence](reviews/2026-09-13-testbed-shortcut-scope.md) records the
 disposable compositor setup, fixture paths, and unresolved acceptance work.
 
 - Run `tests/shortcut-routing.py INSTANCE WAYLAND_SOCKET QS_INSTANCE` against
@@ -138,7 +138,7 @@ disposable compositor setup, fixture paths, and unresolved acceptance work.
   alternate layouts/shifted symbols and shell failure. These are broader
   requirements than the current automated cases.
 - The [management tool](shortcut-module.md) has an opt-in ABI mismatch test and
-  has been used for build/load/idempotence/unload/reload on plumbus. Verify normal
+  has been used for build/load/idempotence/unload/reload on testbed. Verify normal
   plugin startup integration and recovery after a compositor upgrade before
   treating this worktree as release-ready.
 - With no existing actual-Ask fixture running, run
@@ -270,7 +270,7 @@ journalctl --user --since '5 minutes ago' --no-pager \
 ## Release acceptance
 
 The opt-in `tests/preview.test.cjs` checks the real Conversation and GJS
-file-preview helper on Plumbus. With its desktop reserved and the active
+file-preview helper on Testbed. With its desktop reserved and the active
 Wayland/Hyprland environment set, run `ASK_PREVIEW_UI_TEST=1 node --test
 tests/preview.test.cjs`. It uses temporary HOME/config/cache, starts no harness,
 and checks mixed results, same-index result replacement, `@` search, non-file
@@ -280,7 +280,7 @@ requires a Wayland backend; offscreen Quickshell has no PanelWindow backend.
 For the duplicate-agent-window regression, the opt-in
 `tests/bundled-resolver-mosh-windows.py` exercises the real Ask activation path
 with two live Ghostty/mosh clients attached to one private tmux pane. Run only
-on the authorized Plumbus desktop, after coordinating exclusive desktop use
+on the authorized Testbed desktop, after coordinating exclusive desktop use
 and reviewing the fixture lifecycle. It requires `ASK_BUNDLED_MOSH_WINDOWS_LIVE=1`,
 `YOOHOO_MOSH_LIVE=1`, `YOOHOO_LIVE_TEST_HOST=1`, the active Hyprland/Wayland
 environment, and Yoohoo's private fixture helpers (`ASK_MOSH_SUPPORT_ROOT`).

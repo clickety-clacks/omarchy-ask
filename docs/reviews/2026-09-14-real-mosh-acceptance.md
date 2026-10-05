@@ -1,23 +1,23 @@
 # Duplicate agent window: real mosh acceptance
 
-The user reproduced duplicate creation on osanwe after source-only best-effort
+The user reproduced duplicate creation on lumen after source-only best-effort
 work. Read-only hashes confirmed installed Ask still used Linux collector
 `29869743`; source used `c83fd9f9`. The explicit no-deployment instruction meant
 the installed behavior had not changed. This explains deployment state, but
 does not establish that the new code fixes the actual connection topology.
 
-Earlier Plumbus live tests used two equal-title Ghostty windows and a synthetic
+Earlier Testbed live tests used two equal-title Ghostty windows and a synthetic
 remote roster. Those checks exercised real activation but did not run mosh.
 They are insufficient evidence for the user's `0_1_9` case.
 
 Required reproduction: two real Ghostty/mosh connections to the same owned
-private tmux target on Plumbus, generic window titles rather than agent-name
+private tmux target on Testbed, generic window titles rather than agent-name
 titles; select via Ask's production activation path; focus an existing window
 and its workspace; preserve the full window set and tmux client count. Use
 actual local process/transport metadata and record the exact scope of any
-synthetic roster. No osanwe runtime testing or deployment is authorized here.
+synthetic roster. No lumen runtime testing or deployment is authorized here.
 
-## Result: real mosh activation passed on Plumbus
+## Result: real mosh activation passed on Testbed
 
 The final run of `tests/bundled-resolver-mosh-windows.py` passed through Ask's
 production `activate()` path. It created two real Ghostty windows, each running
@@ -25,8 +25,8 @@ a real encrypted loopback mosh connection attached to the same private tmux
 pane. Both titles were the generic `mosh`, and the synthetic roster agent name
 was deliberately unrelated to the window titles. The mosh-client `-#` display
 arguments carried the target host/session hints, matching the user's captured
-standalone-client command form. The host label was synthetic (`gibson.invalid`);
-this was not a connection to Gibson or a roaming-network test.
+standalone-client command form. The host label was synthetic (`atlas.invalid`);
+this was not a connection to Atlas or a roaming-network test.
 
 The test put the windows on separate workspaces, made the first most recently
 used, then invoked activation from an empty workspace. Both real match passes
@@ -55,18 +55,18 @@ they were not printed or persisted.
 - Tested Hub adapter SHA256: `865cc2d1e59b4cfd01e91586fd427ee97725e3756a2b60834f3d803a65c7f2e3`.
   Local source differs only in its two introductory comment lines describing
   best-effort ranking; every executable line is identical.
-- Staged at `/tmp/ask-bundled-library.x7JPAb` on Plumbus.
+- Staged at `/tmp/ask-bundled-library.x7JPAb` on Testbed.
 - All seven bundled Python files match the canonical handoff unchanged.
-- The 33 resolver-client/activation-policy checks also passed on Plumbus with
+- The 33 resolver-client/activation-policy checks also passed on Testbed with
   the final shared source. These checks are supplementary, not the live proof.
 
 Sol statically reviewed fixture startup/cleanup before the live run. Two
 fixture-only corrections were needed: discover Node from the test environment
-(Plumbus uses mise), and use the current Hyprland Lua workspace dispatchers.
+(Testbed uses mise), and use the current Hyprland Lua workspace dispatchers.
 Earlier failed attempts are not product failures or claimed passing runs.
 
 This proves the real-mosh existing-window **activation path**, not a mouse
-click through the Ask popup, full network roaming, or the actual osanwe/Gibson
-session. The installed osanwe Ask remains unchanged; no osanwe runtime tests or
+click through the Ask popup, full network roaming, or the actual lumen/Atlas
+session. The installed lumen Ask remains unchanged; no lumen runtime tests or
 deployment were performed. Yoohoo owns its separate product activation gate
 and can reuse the frozen fixture's product-neutral callback.

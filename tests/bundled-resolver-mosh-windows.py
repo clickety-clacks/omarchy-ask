@@ -1,4 +1,4 @@
-"""Plumbus-only two-window real-mosh activation gate.
+"""Testbed-only two-window real-mosh activation gate.
 
 This opt-in test imports Yoohoo's reviewed private tmux/sshd/mosh lifecycle,
 starts two loopback mosh servers for one private tmux pane, and launches two
@@ -24,7 +24,7 @@ import time
 
 OPT_IN = "ASK_BUNDLED_MOSH_WINDOWS_LIVE"
 SUPPORT_ENV = "ASK_MOSH_SUPPORT_ROOT"
-SUPPORT_DEFAULT = Path("/home/mike/Projects/yoohoo-hub-work/tests/integration")
+SUPPORT_DEFAULT = Path("~/Projects/yoohoo-hub-work/tests/integration")
 REPO = Path(__file__).resolve().parents[1]
 BRIDGE = Path(os.environ.get("ASK_MOSH_BRIDGE_ROOT", str(REPO / "bridge"))).resolve()
 MAX_OUTPUT = 256 * 1024
@@ -67,7 +67,7 @@ class OwnedWindow:
 
 def _authorized() -> None:
     if os.environ.get(OPT_IN, "").strip() != "1":
-        raise GateFailure(f"set {OPT_IN}=1 for the reviewed Plumbus gate")
+        raise GateFailure(f"set {OPT_IN}=1 for the reviewed Testbed gate")
     if os.environ.get(startup.MOSH_OPT_IN_ENV, "").strip() != "1":
         raise GateFailure(f"set {startup.MOSH_OPT_IN_ENV}=1")
     if not connection.live_test_authorized():
@@ -298,12 +298,12 @@ def run_gate(activation_callback=None) -> dict[str, object]:
     node = Path(node_path)
     baseline = _clients(hyprctl)
     if baseline:
-        raise GateFailure("isolated Plumbus desktop has pre-existing windows")
+        raise GateFailure("isolated Testbed desktop has pre-existing windows")
     active_workspace = json.loads(_run([str(hyprctl), "-j", "activeworkspace"]))
     original_workspace = str(active_workspace.get("name", ""))
     token = secrets.token_hex(6)
     session = f"0_1_9-{token}"
-    host = "gibson.invalid"
+    host = "atlas.invalid"
     ports = [startup._random_port(), startup._random_port()]
     while ports[1] == ports[0]:
         ports[1] = startup._random_port()

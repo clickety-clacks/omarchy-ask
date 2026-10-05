@@ -23,7 +23,7 @@ function lineReader(stream) {
 }
 
 test("plocate worker owns one descendant, replaces it, preserves records, and proves caps", async t => {
-  assert.equal(hostname(), "plumbus", "runtime worker tests belong on Plumbus");
+  assert.equal(hostname(), "testbed", "runtime worker tests belong on Testbed");
   const fixture = mkdtempSync(join(tmpdir(), "ask-index-worker-"));
   const bin = join(fixture, "bin"); const root = join(fixture, "root");
   mkdirSync(bin); mkdirSync(root);

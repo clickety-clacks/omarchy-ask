@@ -17,7 +17,7 @@ locations are deployment inputs, not runtime constants.
 
 ## Shared contribution evidence
 
-Yoohoo's owner reports passing the gated pure run on Plumbus for these exact
+Yoohoo's owner reports passing the gated pure run on Testbed for these exact
 reserved contribution hashes:
 
 - Fixture: `55be60b85566a88aad09ef4162eb1acbe533005d4de36048becc35f5e8eb9e1d`
@@ -50,7 +50,7 @@ owner read them and verified hashes before Yoohoo's independent safety gate.
 - Fourteen harness/shortcut baseline tests pass. The combined run is 40/40,
   not an addition of overlapping focused runs.
 - Node syntax, diff checks, and clean-copy Omarchy plugin validation pass.
-- The 22 client/action tests also pass on Plumbus from isolated source copy
+- The 22 client/action tests also pass on Testbed from isolated source copy
   `/tmp/ask-shared-adapter.HF6UOp`, using only controlled subprocesses and
   injected actions. No shared Linux collector, real remote connection, or
   desktop focus was invoked by that run.
@@ -73,7 +73,7 @@ passes both the review reproduction and a durable regression. Duplicate
 normalized Hub identities are rejected atomically before publishing a frame.
 
 Final combined local suite: **44/44 passed**, no skips. Final isolated-copy
-Plumbus suite: **26/26 passed** (14 client, 10 action, one snapshot, one process
+Testbed suite: **26/26 passed** (14 client, 10 action, one snapshot, one process
 cleanup). These replace the earlier overlapping counts, not add to them.
 No real shared collector, desktop focus, or remote transport was invoked by
 these controlled Ask tests. Independent review reports no remaining code

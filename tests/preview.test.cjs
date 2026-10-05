@@ -7,9 +7,9 @@ const { spawnSync } = require('node:child_process');
 const { test } = require('node:test');
 
 test('real Conversation previews follow file selection in mixed and focused results', {
-  skip: process.env.ASK_PREVIEW_UI_TEST !== '1' && 'requires opt-in Plumbus desktop',
+  skip: process.env.ASK_PREVIEW_UI_TEST !== '1' && 'requires opt-in Testbed desktop',
 }, () => {
-  assert.equal(hostname(), 'plumbus');
+  assert.equal(hostname(), 'testbed');
   assert.ok(process.env.WAYLAND_DISPLAY);
   const repo = resolve(__dirname, '..');
   const temp = mkdtempSync(join(tmpdir(), 'ask-preview-'));

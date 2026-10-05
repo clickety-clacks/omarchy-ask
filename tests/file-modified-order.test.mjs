@@ -15,7 +15,7 @@ async function waitFor(predicate) {
 }
 
 test("real streaming file scans retain newest files before the result cap in main and focused search", async () => {
-  assert.equal(hostname(), "plumbus");
+  assert.equal(hostname(), "testbed");
   const root = mkdtempSync(join(tmpdir(), "ask-mtime-"));
   const directory = join(root, "needle"); mkdirSync(directory);
   const oldest = join(root, "needle.txt");
@@ -45,7 +45,7 @@ test("real streaming file scans retain newest files before the result cap in mai
 });
 
 test("late metadata, unknown times and index union use the same newest-first bounded ordering", async () => {
-  assert.equal(hostname(), "plumbus");
+  assert.equal(hostname(), "testbed");
   const coordinator = new FileSearchCoordinator({ basePath: "/fixture", enableIndex: false,
     maxEvidence: 3, maxResults: 3 });
   const request = { rows: new Map(), repos: new Map(), query: "needle", scopeRoot: "/fixture",

@@ -6,9 +6,9 @@ const { join, resolve } = require('node:path');
 const { test } = require('node:test');
 
 test('real Conversation retains selection identity as streaming buckets reorder', {
-  skip: process.env.ASK_PREVIEW_UI_TEST !== '1' && 'requires reserved Plumbus desktop',
+  skip: process.env.ASK_PREVIEW_UI_TEST !== '1' && 'requires reserved Testbed desktop',
 }, () => {
-  assert.equal(hostname(), 'plumbus');
+  assert.equal(hostname(), 'testbed');
   const repo = resolve(__dirname, '..');
   const root = mkdtempSync(join(tmpdir(), 'ask-streaming-selection-'));
   try {

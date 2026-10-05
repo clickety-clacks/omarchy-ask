@@ -157,7 +157,7 @@ test("best-effort activation selects the active of two matching owned windows", 
         class: String(item.class || ""), title: String(item.title || "") });
     }
     const target = {
-      identity: { machine: "gibson.invalid", instanceId: `two-window-${process.pid}`,
+      identity: { machine: "atlas.invalid", instanceId: `two-window-${process.pid}`,
         pid: 4000000, startTimeTicks: "9" },
       tmux: { session: "0_1_9", windowIndex: "0", paneId: "%1",
         socket: { kind: "path", value: "/tmp/ask-two-window-unused.sock" } },

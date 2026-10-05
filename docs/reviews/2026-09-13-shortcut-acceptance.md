@@ -1,12 +1,12 @@
 # System-shortcut acceptance
 
 Objective: fully support system shortcut keys except where Ask overrides them;
-test on the authorized plumbus platform.
+test on the authorized testbed platform.
 
-Implementation and the installed plumbus copy are verified against the current
-Omarchy/Hyprland baseline. This is not a public release or an osanwe deployment.
+Implementation and the installed testbed copy are verified against the current
+Omarchy/Hyprland baseline. This is not a public release or an lumen deployment.
 Detailed commands, build identities, failed-test findings and successful reruns
-are recorded in [the live evidence](2026-09-13-plumbus-shortcut-scope.md).
+are recorded in [the live evidence](2026-09-13-testbed-shortcut-scope.md).
 
 | Requirement | Current evidence |
 | --- | --- |
@@ -16,8 +16,8 @@ are recorded in [the live evidence](2026-09-13-plumbus-shortcut-scope.md).
 | Do not strand focus or seize normal desktop focus actions | Popup admission, repeated pin handoffs, settings popups with the pointer outside their cards, and native focus leaving a still-mapped popup pass. Settings dismiss without additional visible controls. |
 | Preserve conversation lifecycle | Five fresh pin cycles retain bridge identity; installed shell opens a new overlay on the first toggle after pin and closes only that overlay. |
 | Initialize/recover safely | Empty-cache build, cached loading, explicit compositor selection, supported ABI checks, safe managed upgrades/rollback, missing executables, delayed-open cancellation, reload/unload and abrupt shell exit verified. |
-| Verify the actual test-platform installation | Current code installed/enabled in the normal plumbus shell; all 13 runtime source/build files match the repository. Six integration cases pass through a temporary kernel/libinput keyboard, not just Wayland synthetic input. |
-| Preserve unrelated state and clean up | Only Ask was added to the shell config; temporary bindings, keyboard and container removed. Disposable compositor/shell stopped. Device permissions unchanged. Osanwe's differing installed image work untouched. |
+| Verify the actual test-platform installation | Current code installed/enabled in the normal testbed shell; all 13 runtime source/build files match the repository. Six integration cases pass through a temporary kernel/libinput keyboard, not just Wayland synthetic input. |
+| Preserve unrelated state and clean up | Only Ask was added to the shell config; temporary bindings, keyboard and container removed. Disposable compositor/shell stopped. Device permissions unchanged. Lumen's differing installed image work untouched. |
 
 There are **56 distinct live integration cases** plus **26 static, installer
 and harness-policy/error checks**, all passing. Repeated backends/runs are not
@@ -30,5 +30,5 @@ Hyprland 0.56.2 source/ABI identified in the evidence. Unknown versions are not
 loaded speculatively. If support is unavailable, native bindings stay usable
 and Ask can still open, but conflicting native shortcuts take precedence.
 Future compositor versions require compatibility verification, not merely a
-recompile. Public release and merging/deploying into osanwe's separate working
+recompile. Public release and merging/deploying into lumen's separate working
 tree remain separate authorized delivery actions.

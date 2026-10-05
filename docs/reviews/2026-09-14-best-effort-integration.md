@@ -1,6 +1,6 @@
 # Best-effort shared resolver integration
 
-Source-only work; no osanwe tests or deployment.
+Source-only work; no lumen tests or deployment.
 
 Ask consumes shared `match` candidates without requiring transport proof.
 Highest-score candidates use active window, then Hyprland focus-history order,
@@ -14,7 +14,7 @@ are not treated as proof that no window exists.
 
 The concrete acceptance case is two existing windows for one agent: selecting
 the agent focuses an existing window and leaves window count unchanged. Unit
-checks do not establish that behavior. The actual osanwe `0_1_9` case remains
+checks do not establish that behavior. The actual lumen `0_1_9` case remains
 unverified and needs separate authorization.
 
 At initial frozen-source integration, review found `match` still called the
@@ -23,7 +23,7 @@ the canonical collector. Ask's real synthetic-remote two-window test is held
 until that correction is handed off; no private matcher or mock-resolver
 substitute is being used to claim acceptance.
 
-## Corrected handoff and Plumbus result
+## Corrected handoff and Testbed result
 
 Synced frozen canonical collector `c080b305`, resolver `90b210c7`, and corrected
 Linux collector `c83fd9f9`; all seven hash assertions match. Remote `match` no
@@ -36,7 +36,7 @@ a separate compositor query confirmed an empty desktop afterward.
 
 This test uses synthetic remote identity/metadata and actual local desktop
 windows, shared collector, Ask selection, and focus. It does not establish the
-actual osanwe `0_1_9` click or a live mosh connection. No osanwe deployment or
-tests occurred. Controlled adapter checks also passed on Plumbus. The first
+actual lumen `0_1_9` click or a live mosh connection. No lumen deployment or
+tests occurred. Controlled adapter checks also passed on Testbed. The first
 core-suite copy omitted `fixtures/mosh-window-hints.json`; that staging omission
 was corrected before rerunning the complete core suite.

@@ -1,4 +1,4 @@
-"""Plumbus-only actual transport launch/repeat gate; no pre-created window.
+"""Testbed-only actual transport launch/repeat gate; no pre-created window.
 
 Synthetic roster and a fixture-proved attach preflight; actual production
 launch command, private SSH/tmux, Ghostty, LinuxCollector and focus dispatch.
@@ -56,8 +56,8 @@ def wait(check, description, seconds=6):
 def main():
     if TRANSPORT not in {"ssh", "mosh"}:
         raise RuntimeError("unsupported fixture transport")
-    if socket.gethostname() != "plumbus" or os.environ.get("ASK_LAUNCH_REPEAT_LIVE") != "1":
-        raise RuntimeError("explicit Plumbus live opt-in required")
+    if os.environ.get("ASK_TESTBED") != "1" or os.environ.get("ASK_LAUNCH_REPEAT_LIVE") != "1":
+        raise RuntimeError("explicit test-machine opt-in required (ASK_TESTBED=1)")
     if not os.environ.get("HYPRLAND_INSTANCE_SIGNATURE") or not os.environ.get("WAYLAND_DISPLAY"):
         raise RuntimeError("desktop environment required")
     if clients():

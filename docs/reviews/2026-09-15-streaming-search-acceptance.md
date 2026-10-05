@@ -1,10 +1,10 @@
 # Whole-scope streaming search acceptance
 
-Owner: Ask main. Status: **accepted and installed on osanwe**.
+Owner: Ask main. Status: **accepted and installed on lumen**.
 
 Contract: [architecture-file-search.md](../architecture-file-search.md).
 Independent static review: [Sol review](2026-09-15-streaming-search-sol-review.md).
-Runtime regression tests run on Plumbus only. The resolver library is unchanged.
+Runtime regression tests run on Testbed only. The resolver library is unchanged.
 
 ## Original failure
 
@@ -57,12 +57,12 @@ snapshot. It does not send model prompts or activate the user's agents.
 
 ## Final evidence and delivery
 
-Final runtime stage: `/tmp/ask-streaming-final.6pJUGT` on Plumbus, with fresh
+Final runtime stage: `/tmp/ask-streaming-final.6pJUGT` on Testbed, with fresh
 `npm ci --no-audit --no-fund` from the lockfile (136 packages). The parent ran:
 
 ```sh
 ASK_BUFFERED_BASELINE=/tmp/ask-streaming-acceptance.fG3Vem/baseline/files.js \
-  ASK_RUNTIME_HOST=plumbus node --test tests/*.test.mjs tests/*.test.cjs bridge/image-paste.test.js
+  ASK_RUNTIME_HOST=testbed node --test tests/*.test.mjs tests/*.test.cjs bridge/image-paste.test.js
 ```
 
 Result: **117 passed, 0 failed, 5 opt-in skips**, 122 total, on the final
@@ -97,10 +97,10 @@ Independent Sol high final review passed on the five exact hashes above: all
 four product requirements accepted, no remaining concrete production blocker.
 
 Delivery uses a complete source snapshot at
-`/home/mike/.local/state/ask-streaming-build.GFO81W`, based on the previously
+`~/.local/state/ask-streaming-build.GFO81W`, based on the previously
 installed commit, through `omarchy plugin update clickety-clacks.ask --yes`,
 then `npm ci` and `omarchy restart shell`. Pre-update plugin and settings are
-backed up at `/home/mike/.local/state/ask-streaming-backup.3GySnn`.
+backed up at `~/.local/state/ask-streaming-backup.3GySnn`.
 Installed commit: `68a6d08cd1537036270ecadfe230a6eb17622758`. Normal full plugin
 update and fresh npm dependency installation succeeded, followed by an actual
 shell restart at 8:01 PM PT on September 15. Every installer-managed tracked
@@ -108,6 +108,6 @@ file matches the immutable build snapshot; the installed git worktree is
 clean. Both `ask.json` and `shell.json` are byte-identical to their backups.
 The new shell (PID 2154309) reports `ok`, Ask is enabled, Hyprland reports no
 configuration errors, and the new process's startup log has no Ask/QML errors.
-No runtime regressions were executed on osanwe. A post-install receipt is at
-`/home/mike/.local/state/ask-streaming-install-68a6d08.json`; this delivery note
+No runtime regressions were executed on lumen. A post-install receipt is at
+`~/.local/state/ask-streaming-install-68a6d08.json`; this delivery note
 was added to the development checkout after the immutable build was created.

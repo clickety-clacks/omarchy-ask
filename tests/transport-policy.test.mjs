@@ -41,14 +41,14 @@ const observation = (state = "complete") => ({ resolverVersion: "0.2.0", transpo
 test("capability records live apart from settings and never take an unreachable result", () => {
   const directory = mkdtempSync(join(tmpdir(), "ask-capability-"));
   try {
-    assert.equal(readCapabilities(directory, "gibson"), null);
-    assert.equal(recordCapabilities(directory, "Gibson.", observation(), 1000), true);
-    assert.ok(existsSync(join(directory, "gibson.json")));
-    assert.deepEqual(readCapabilities(directory, "gibson", 2000),
+    assert.equal(readCapabilities(directory, "atlas"), null);
+    assert.equal(recordCapabilities(directory, "Atlas.", observation(), 1000), true);
+    assert.ok(existsSync(join(directory, "atlas.json")));
+    assert.deepEqual(readCapabilities(directory, "atlas", 2000),
       { ssh: "available", et: "available", mosh: "unavailable", etPort: 4022 });
-    assert.equal(recordCapabilities(directory, "gibson", observation("unreachable"), 1500), false);
-    assert.equal(readCapabilities(directory, "gibson", 2000).et, "available");
-    assert.equal(readCapabilities(directory, "gibson", CAPABILITY_MAX_AGE_MS + 1001), null);
+    assert.equal(recordCapabilities(directory, "atlas", observation("unreachable"), 1500), false);
+    assert.equal(readCapabilities(directory, "atlas", 2000).et, "available");
+    assert.equal(readCapabilities(directory, "atlas", CAPABILITY_MAX_AGE_MS + 1001), null);
     for (const host of ["../x", "a/b", "-x", ""]) assert.equal(capabilityPath(directory, host), null);
     const unknown = { transports: { state: "partial", ...Object.fromEntries(["ssh", "et", "mosh"]
       .map(name => [name, { state: "unknown", code: "probe_failed" }])) } };
