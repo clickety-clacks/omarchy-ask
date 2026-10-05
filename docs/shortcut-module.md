@@ -1,6 +1,6 @@
 # Shortcut module development and installation
 
-This integration is verified on the supported testbed baseline but not released. In
+This integration is verified on the supported test machine baseline but not released. In
 this worktree, Ask initializes shortcut support automatically using the exact
 compositor connection reported by Quickshell. It never selects the first
 compositor implicitly. The commands below are also available for diagnostics.
@@ -80,7 +80,7 @@ headers, deliberately reports a different running ABI, and verifies that
 anything into the user's compositor.
 
 Live tests require the explicit disposable compositor and fixtures documented
-in [the testbed evidence](reviews/2026-09-13-testbed-shortcut-scope.md).
+in [the test machine evidence](reviews/2026-09-13-testbed-shortcut-scope.md).
 When testing a managed artifact, set `ASK_SHORTCUT_TEST_MODULE` to its exact
 path for `tests/shortcut-routing.py`'s unload/reload case.
 

@@ -5,7 +5,7 @@ continues working automatically, including mappings added/remapped while open.
 
 ## Actual desktop evidence
 
-Lumen, Hyprland 0.56.2 (efb50993780079460b0cbed1363e2166a2de1d9f),
+The desktop, Hyprland 0.56.2 (efb50993780079460b0cbed1363e2166a2de1d9f),
 2026-09-13. The installed Ask was the existing image-paste WIP; no plugin files,
 ACP code, or image work were replaced, and the shell was not restarted.
 
@@ -43,7 +43,7 @@ behavior or all possible bind flags/devices/layouts.
   recovery races with other actors changing maps. New Ask code never changes
   compositor submaps. Any legacy stale map must be recovered deliberately during
   deployment, without a lingering automatic reset in the application.
-- Lumen's live ask.json has that setting false as a mitigation. Source QML is
+- The desktop's live ask.json has that setting false as a mitigation. Source QML is
   NOT installed; active pinned conversations must not be destroyed to deploy it.
 - Six existing harness tests pass and `git diff --check` passes. These tests say
   nothing about shortcut precedence.

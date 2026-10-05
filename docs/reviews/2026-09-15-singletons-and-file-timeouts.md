@@ -1,6 +1,6 @@
 # Single-match buckets and fresh Pictures files
 
-Confirmed on lumen by read-only diagnostics: the reported screenshot exists
+Confirmed on the desktop by read-only diagnostics: the reported screenshot exists
 in Pictures and direct `fd` finds it. The installed file bridge emitted an
 empty, supposedly complete result. Its whole-home `fd` invocation found the
 exact screenshot in stdout but was killed at its 15-second timeout; the bridge
@@ -16,7 +16,7 @@ Changes:
   bucket types and focused searches. Avoid repeating promoted items, count
   them toward the twenty-item fill, and preserve direct activation.
 
-Testbed stage: `/tmp/ask-singleton-check.vDl0uL`.
+The test machine stage: `/tmp/ask-singleton-check.vDl0uL`.
 Ten checks passed via `node --test tests/files-bridge.test.mjs
 tests/file-fallback.test.mjs tests/search-settings.test.cjs`: actual native
 file bridge with fresh Pictures files, fallback with real fd and simulated
@@ -34,7 +34,7 @@ updater, lockfile dependency installation, and an actual shell restart.
 Existing npm dependencies must be moved into the backup before update because
 the updater rejects their generated `.bin` symlinks during validation.
 
-Installed on lumen as complete local build
+Installed on the desktop as complete local build
 `3d1880182427a86da4dee34b560f9180ce8b9a5d`, origin
 `~/.local/state/ask-search-build.BA83iO`, previous installation and
 settings backed up at `~/.local/state/ask-search-backup.vObeYu`.
@@ -46,4 +46,4 @@ After installation, a read-only query through the installed file helper
 returned `~/Pictures/screenshot-2026-09-15_18-08-34.png` with
 `totalMatched: 1`, `capped: false`, and `complete: true`. This verifies the
 reported real-file search, not a simulated replacement or an automated
-desktop test on lumen.
+desktop test on the desktop.

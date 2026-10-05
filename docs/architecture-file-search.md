@@ -4,7 +4,7 @@ Owner: Ask main. Initial implementation: Luna xhigh; lifecycle completion: Sol
 high under Mike's permission to escalate coding when needed. Independent
 review: a separate Sol high reviewer.
 This is the implementation contract and acceptance checklist, not a claim of
-completion. Runtime tests belong on Testbed; preserve the existing worktree.
+completion. Runtime tests belong on the test machine; preserve the existing worktree.
 
 ## Problem and product contract
 
@@ -167,7 +167,7 @@ vice versa. Implement only the narrow UI changes needed for that invariant.
 
 Tests must exercise production modules/protocol and include adversarial source
 ordering, not a private replacement algorithm. Inject IO/process boundaries
-for deterministic cases; also run real fd/native bridge integration on Testbed.
+for deterministic cases; also run real fd/native bridge integration on the test machine.
 
 - A stalled mount contributes no EOF, while a local file arrives and is emitted
   within 1 second in the isolated fixture, before the mount deadline/termination.
@@ -191,15 +191,15 @@ for deterministic cases; also run real fd/native bridge integration on Testbed.
 - QML receives multiple same-query snapshots, keeps selected file/agent/window
   identity and preview/action aligned, handles singleton transitions, and
   preserves aggregate order/balancing. Existing search/settings/preview tests
-  remain passing (desktop tests on Testbed only).
+  remain passing (desktop tests on the test machine only).
 - Real production bridge with native index and fresh local files passes; retain
   a negative control showing old buffered behavior fails the latency gate.
 - Sol high reviews the actual patch against each numbered product requirement
   and the above gates; main resolves findings and verifies runtime evidence.
 - Deliver the complete identified build through normal Omarchy installation,
   preserve settings, restart the actual shell, and verify installed identity.
-  No piecemeal installed-file patches. Runtime regression tests remain Testbed
-  only; lumen post-install inspection is limited to read-only health/diagnosis.
+  No piecemeal installed-file patches. Runtime regression tests remain test-machine
+  only; the desktop post-install inspection is limited to read-only health/diagnosis.
 
 Do not count passing tests alone as completion if a required source remains
 serialized, mounted scope is silently omitted, or the installed build is stale.

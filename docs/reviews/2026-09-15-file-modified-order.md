@@ -11,18 +11,18 @@ that partition. Index workers reuse their existing candidate stat to supply
 timestamps. Bounded retention compares timestamps before pruning, so late
 newer files can displace earlier old files.
 
-Testbed stage: `/tmp/ask-mtime-validation.epbZv7GM`, fresh locked npm install.
+The test machine stage: `/tmp/ask-mtime-validation.epbZv7GM`, fresh locked npm install.
 Full suite: 119 passed, zero failed, five existing opt-in skips (124 total).
 New tests exercise actual fd plus the metadata worker with controlled file
 mtimes, both main/focused queries, and evidence/display limits. Additional
 checks cover index union, unknown metadata, ties, and late replacement.
 Existing real-bridge EOF test confirms owned scan shutdown with a TERM-ignoring
-child. Tests ran only on Testbed. No QML or shared agent resolver changes.
+child. Tests ran only on the test machine. No QML or shared agent resolver changes.
 
 The five skips are desktop/ABI opt-ins, not new sorting tests. No claim of
 live desktop interaction is made for this ordering-only change.
 
-Installed on lumen via complete `omarchy plugin update`, fresh `npm ci`, and
+Installed on the desktop via complete `omarchy plugin update`, fresh `npm ci`, and
 `omarchy restart shell`: build `e4ad16a3ca461b920552919236daed0b4f9e6bf5`.
 All tracked installed files match `~/.local/state/ask-mtime-build.1bOAxE`;
 installed git state is clean. Backup: `~/.local/state/ask-mtime-backup.PneODI`.

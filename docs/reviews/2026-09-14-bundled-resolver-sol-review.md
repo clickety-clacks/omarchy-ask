@@ -13,7 +13,7 @@ remote live probe was performed by this review.
 
 Ask carries exactly seven canonical Python source files under
 `bridge/agent_window_resolver`. I compared them byte-for-byte with
-`~/Projects/agent-window-resolver/agent_window_resolver` on lumen:
+`~/Projects/agent-window-resolver/agent_window_resolver` on the desktop:
 
 - `__init__.py` —
   `eb4317c4f98a441006f7dd11e458596c8df32a5487b1ccccba5743ad69ea285b`
@@ -129,10 +129,10 @@ proof negatives, activation freshness, duplicate snapshot identity rejection,
 and owned-descendant cleanup.
 
 The integration owner additionally reported **53/53** canonical pure Python
-tests against the bundled package and **40/40** combined Ask checks on Testbed.
+tests against the bundled package and **40/40** combined Ask checks on the test machine.
 The opt-in real desktop test passed there: an exact terminal descendant resolved
 and revalidated, production local activation focused the same stable window,
-and the owned child and window were absent after cleanup. Those Testbed runs are
+and the owned child and window were absent after cleanup. Those the test machine runs are
 supporting owner evidence; I reviewed the test and performed its local syntax
 check but did not repeat the live desktop execution.
 

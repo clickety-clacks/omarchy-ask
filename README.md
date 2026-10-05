@@ -54,7 +54,7 @@ at startup, building an ABI-matched cached module when necessary. It requires
 the tested Hyprland version and local build dependencies; see the
 [dependency and recovery details](docs/shortcut-module.md). This integration
 is **not yet released by the command above**. The current worktree has also
-been tested as an installed plugin on testbed using kernel keyboard input.
+been tested as an installed plugin on the test machine using kernel keyboard input.
 Restart the shell after installing these structural QML changes. If support is unavailable, Ask
 still opens and system bindings remain active, but conflicting system bindings
 take precedence. See the current

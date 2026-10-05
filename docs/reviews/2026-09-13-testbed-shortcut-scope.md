@@ -1,8 +1,8 @@
-# Testbed scoped-shortcut prototype — in progress
+# The test machine scoped-shortcut prototype — in progress
 
-Mike's current goal explicitly authorizes all needed testing on testbed,
+Mike's current goal explicitly authorizes all needed testing on the test machine,
 including compositor integration. The prior authorization blocker is resolved.
-No experimental compositor code has been loaded on lumen.
+No experimental compositor code has been loaded on the desktop.
 
 ## Implementation in the current worktree
 
@@ -22,7 +22,7 @@ No experimental compositor code has been loaded on lumen.
 
 ## Test platform and live handles (revalidate before use)
 
-Testbed is reachable over `ssh testbed`. Same Hyprland 0.56.2 source/ABI as lumen,
+The test machine is reachable over `ssh test-machine`. Same Hyprland 0.56.2 source/ABI as the desktop,
 GCC 16.2.1. It has compiler, pkg-config, make, qs, and wtype. SSH requires an
 explicit Hyprland instance or the matching environment. No passwordless sudo;
 none was needed for these tests.
@@ -39,7 +39,7 @@ none was needed for these tests.
   exec session 76977. Uses tests/ShortcutSurface.qml and real ShortcutScope.qml.
 - Actual Ask wrapper: `actual.qml`, QS instance `wz91l58blt`, PID 59612,
   exec session 2804. All conversations currently closed. Uses copied Commons,
-  Ui and services from testbed's Omarchy install plus source in `ask/`.
+  Ui and services from the test machine's Omarchy install plus source in `ask/`.
   ASK_BRIDGE_COMMAND points to tests/shortcut-fake-bridge.py; no account, model
   or network is used. Do not describe these as real harness tests.
 
@@ -69,7 +69,7 @@ keymap requires `input.resolve_binds_by_sym=true` in this **test-only compositor
 Without it, native binding lookup uses physical-PC keycodes and never matches
 the synthesized keys, while Qt still sees them. This explains the earlier
 apparent shortcut bypass. Do not change a user's input setting to accommodate a
-synthetic test. The lumen uinput evidence remains valid independently.
+synthetic test. The desktop uinput evidence remains valid independently.
 
 The fixture's original IPC method `show` collided with a qs CLI subcommand and
 printed introspection instead of opening the surface. It was renamed
@@ -113,13 +113,13 @@ proof of routing semantics.
   release-quality tests. An explicit tested management tool now exists, but
   normal Ask startup/upgrade integration remains. README/docs/testing remove obsolete submap
   installation instructions and explicitly identify the integration as still
-  in development. No commit, public release or lumen deployment has
+  in development. No commit, public release or the desktop deployment has
   been made. Prototype is not an accepted production dependency yet.
 - Reconcile generic protocol policy/security and unload safety. Native hooks
   are version-specific; refuse unsupported ABI rather than silently promising
   a general fix.
 - After acceptance testing, clean up only the explicit test processes/configs;
-  original testbed desktop and all user bindings remain intact.
+  original test machine desktop and all user bindings remain intact.
 
 ## Continuation: context policy and lifecycle audit
 
@@ -186,11 +186,11 @@ conversations were closed in `finally`. These tests deliberately wait for
 initialization and **do not prove startup registration timing**.
 
 All 12 Node tests (six new policy tests plus six existing harness tests) pass;
-`git diff --check` is clean. Original testbed compositor PID 1038 again reports
+`git diff --check` is clean. Original test machine compositor PID 1038 again reports
 `no plugins loaded`. Nested compositor reports no config errors. Actual Ask
 fixture reports zero conversations. The controlled popup/nested compositor
 remain available for the next acceptance cases; no experimental module has
-been installed or loaded on lumen.
+been installed or loaded on the desktop.
 
 ## Continuation: popup admission and real global-hotkey client
 
@@ -242,7 +242,7 @@ tree. Generated files/binary live in ignored `tests/.build/`. No production
 dependency on this test client or its protocol generator was added.
 
 No installation/upgrade helper, persistent compositor configuration, commit,
-release, or lumen deployment was made. Remaining work above is still a real
+release, or the desktop deployment was made. Remaining work above is still a real
 release/completion gate, particularly pinned/context timing, physical/layout
 coverage, and safe dependency installation/recovery.
 
@@ -305,7 +305,7 @@ real headers plus a deliberately mismatched fake compositor ABI and proves no
 installer tests plus the six policy and six harness tests also pass together
 (16 tests, exit 0); `git diff --check` is clean.
 
-On testbed the management tool successfully:
+On the test machine the management tool successfully:
 
 - Built without altering the initially loaded development module.
 - Refused `load` while that different module remained loaded.
@@ -332,12 +332,12 @@ suite. Only the explicit nested compositor was targeted.
 
 This is not yet normal install/startup integration or a release. Pin handoff,
 context timing, remaining hardware/multi-device/crash coverage, and normal
-startup/upgrade handling remain open. No lumen plugin or compositor was changed.
+startup/upgrade handling remain open. No desktop plugin or compositor was changed.
 
 ## Startup, pinning, contexts and multi-device completion pass
 
 This section supersedes the open startup/pinning/context work and module paths
-above. The worktree remains unreleased; lumen's installed Ask was not changed.
+above. The worktree remains unreleased; the desktop's installed Ask was not changed.
 
 ### Product changes
 
@@ -401,7 +401,7 @@ above. The worktree remains unreleased; lumen's installed Ask was not changed.
 
 The above is **50 unique live cases** (20+11+5+9+4+1), not a claim of physical
 keyboard or actual-harness testing. ACP was the deterministic fake bridge.
-`/dev/uinput` on testbed is root-only, no ydotool injector is installed, and
+`/dev/uinput` on the test machine is root-only, no ydotool injector is installed, and
 the user has no passwordless sudo permission for input injection. No ACL,
 sudo policy, system package or original-desktop binding was changed to bypass
 that restriction. Full-keymap input uses the real Wayland keyboard path and
@@ -417,9 +417,9 @@ fixture `ojv1bgcblt` was stopped before the startup suite, which owns and cleans
 up its own shells. Do not reuse prior actual-Ask IDs.
 
 The test-client Makefile and exact source protocol XML are now present on
-testbed. Build with
+The test machine. Build with
 `HYPRLAND_PROTOCOLS=~/Projects/ask-shortcut-test.2wXmli/tests/protocols`;
-the earlier `/tmp/hyprland-src` path exists on lumen, not on testbed.
+the earlier `/tmp/hyprland-src` path exists on the desktop, not on the test machine.
 
 Post-crash recovery was also verified: exec **22996** reran all 20 routing
 cases against the newly launched controlled fixture, exit 0. Exec **63467**
@@ -434,14 +434,14 @@ release was cut and no experimental module was loaded into a user desktop.
 ## Installed-shell and kernel-input acceptance
 
 This final section supersedes the installation/input limitations above.
-Testbed had **no installed Ask**, so there was no image work there to overwrite.
+The test machine had **no installed Ask**, so there was no image work there to overwrite.
 The worktree was installed at
 `~/.config/omarchy/plugins/clickety-clacks.ask`, dependencies installed
 with `npm ci`, and the plugin enabled through Omarchy's normal CLI. The previous
 shell config was backed up as `shell-before-install.json` in the test root.
-Lumen's installed plugin (which differs from this repository) was not touched.
+The desktop's installed plugin (which differs from this repository) was not touched.
 
-The native support automatically built/loaded into the original testbed
+The native support automatically built/loaded into the original test machine
 compositor, PID 1038 / wayland-1. Its module identity is build
 `ba105f462bf199a1331815aa`, protocol 1, the supported ABI. `/proc/1038/maps`
 confirms the actual loaded file is:
@@ -471,7 +471,7 @@ by that operation. A clean shell restart is required for this structural update.
 
 ### Real input path and results
 
-The user already had Docker access on testbed. The kernel input test used the
+The user already had Docker access on the test machine. The kernel input test used the
 official Python image pinned to local ID
 `sha256:c6ead215bfd31f1e433d968853b7a769989117115b728874824e6c0a27cb96fc`.
 The container had no network, no Linux capabilities, a read-only root filesystem,
@@ -496,7 +496,7 @@ kernel/libinput keyboard path**:
 
 The runner also verified creation/removal of the named kernel keyboard. After
 exit, no `ask-shortcut-uinput-*` container remained and `/dev/uinput` was still
-`600 root root`. F5 and Super+H were initially unused on testbed; the temporary
+`600 root root`. F5 and Super+H were initially unused on the test machine; the temporary
 test bindings were removed by reloading the original config, with no config
 errors. No prompt was submitted to a model. This is a kernel-device-path test,
 not a claim of physical USB key presses by a person.
@@ -514,7 +514,7 @@ the acceptance set comprises **56 unique live cases**, with separate repeated
 input backends rather than inflated duplicate counts.
 
 This is a tested worktree installation on the authorized test platform, not a
-public release or deployment to lumen. Merging it into lumen's separate image
+public release or deployment to the desktop. Merging it into the desktop's separate image
 work and cutting a release are separate delivery actions, not performed here.
 
 ### Final verification and handoff
@@ -523,7 +523,7 @@ work and cutting a release are separate delivery actions, not performed here.
   after a cold fixture start. Exec **66439**, exit 0: all four startup/failure
   cases passed again on that final source.
 - SHA-256 comparison of all 13 runtime QML/JS/native-source/build files showed
-  an exact match between the repository and the installed testbed plugin.
+  an exact match between the repository and the installed test machine plugin.
 - Final clean-tree Omarchy plugin validation and `git diff --check` passed.
 - Comparing shell config before/after installation found only the added
   `clickety-clacks.ask` entry. The existing `mike.agentd-menu` entry was retained.
@@ -533,6 +533,6 @@ work and cutting a release are separate delivery actions, not performed here.
   were terminated after acceptance. The actual-Ask fixture and startup runners
   had already exited. Test artifacts, the original shell-config backup and
   compiled caches remain for reproducibility; no user documents were deleted.
-- Testbed retains the enabled tested Ask installation and its native support.
+- The test machine retains the enabled tested Ask installation and its native support.
   Original compositor PID 1038 and shell PID 104462 were not targeted by test
   cleanup. There is no running test-input container or kernel test keyboard.

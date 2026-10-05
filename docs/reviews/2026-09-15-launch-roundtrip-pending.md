@@ -1,17 +1,17 @@
 # Launch-to-match regression preparation
 
 Final status: the corrected replay and both final live transport gates have
-now passed on Testbed, including owned cleanup. See
+now passed on the test machine, including owned cleanup. See
 [final acceptance](2026-09-15-qualified-launch-acceptance.md). The chronological
 pending/failure notes below are retained as the audit trail, not current status.
 
 Status: source-only draft, not executed or accepted. Requires Yoohoo's
 reviewed qualified-target correction and test-machine authorization.
 
-## Testbed replay checkpoint
+## The test machine replay checkpoint
 
 The updated replay `1cfc3241fa46006a40df0ba00678c43171bc35f9f56330e42837d7e42f25ddd5`
-passed all eight cases in `/tmp/ask-qualified-roundtrip.hO7xDw` on Testbed.
+passed all eight cases in `/tmp/ask-qualified-roundtrip.hO7xDw` on the test machine.
 The helper remains `6575ce2f84dd5fd386bdd79f6f064c28cc59c8d644371df8b96df44431b72aac`.
 This supersedes the initial unrun status for the pure replay only.
 
@@ -19,19 +19,19 @@ Yoohoo's negative control identified that the original parenthesized session
 and equal display name masked the duplicate-launch bug through alias/name
 fallback. The replay now includes plain random session names with distinct
 random agent display names, while retaining equal-name conflict cases.
-Independent pre-fix checks in `/tmp/ask-qualified-baseline.ahzHt7` on Testbed
+Independent pre-fix checks in `/tmp/ask-qualified-baseline.ahzHt7` on the test machine
 use collector `42db2f45` and resolver `24174377`; both SSH/path/distinct and
 mosh/path/distinct fail on an attempted second terminal launch, before the
 conflict assertions. The corrected package passes those same cases.
 
 Live SSH source `tests/agent-launch-roundtrip-live.py` is under static safety
 review, not executed yet. It likewise avoids matching display/session names.
-Live mosh launch/repeat remains outstanding. No lumen tests or deployment.
+Live mosh launch/repeat remains outstanding. No desktop tests or deployment.
 
 ## First live SSH attempt: cleanup failure, not accepted
 
 The reviewed live fixture `38fbeafc4ce366af16bac6e2e588584db4a2939046fe03288b44c26fd88f5f55`
-ran on Testbed. It raised during terminal cleanup, with no preceding behavior
+ran on the test machine. It raised during terminal cleanup, with no preceding behavior
 exception chain in the captured output. It emitted no behavior checkpoint, so
 do not promote that absence to accepted behavior evidence. Final traceback:
 
@@ -70,7 +70,7 @@ Owned recovery: confirmed private tmux server PID 14596 from its exact socket
 and executable, then issued `kill-server` against that socket only; confirmed
 private SSH listener PID 14623 from its private pidfile and executable before
 TERM. Read-only inventory confirmed all three PIDs gone and Hypr clients `[]`.
-Preserved evidence roots on Testbed (including generated private fixture keys,
+Preserved evidence roots on the test machine (including generated private fixture keys,
 not user credentials): `/tmp/ask-live-launch-uj8yiygg`,
 `/tmp/yoohoo-live-_makudyu`, and
 `/run/user/1000/yoohoo-private-sshd-74ce9r3a`.
@@ -82,7 +82,7 @@ review before retry; persistent uncertain identity still preserves state.
 
 ## Accepted live SSH retry
 
-After independent Sol closing approval, fixture `948762b3` passed on Testbed
+After independent Sol closing approval, fixture `948762b3` passed on the test machine
 with exit 0. Explicit behavior and final cleanup records reported:
 
 ```json
@@ -107,7 +107,7 @@ is now under static review before execution. It uses real native mosh in
 loopback-only `--local` mode with Ask's exact attach command and actual client
 display argv. The owned mosh server is bound by private-tmux-client ancestry,
 PID/start identity, and exact loopback UDP port/inode using the maintained
-fixture helpers. It does not cover remote SSH bootstrap. No lumen changes.
+fixture helpers. It does not cover remote SSH bootstrap. No desktop changes.
 
 ## First native mosh attempt: behavior complete, cleanup not accepted
 
@@ -149,7 +149,7 @@ into Ask source. All seven files were compared byte-for-byte; collector is
 and resolver is
 `0be324ff3bf9052182c7114b5976a0e6e3ab4696942b6f123da934b1268b65bb`.
 The source bundle-integrity test expectations were updated, not any installed
-files or installation records. Runtime acceptance still requires Testbed.
+files or installation records. Runtime acceptance still requires the test machine.
 
 Files:
 
@@ -189,4 +189,4 @@ The next live gate must actually launch through Ask, wait for the resulting
 window/client, activate again, and verify focus/workspace and unchanged window
 and connection counts. No replacement of that live gate by these checks.
 
-No resolver source edits, installation, or lumen test runs in this step.
+No resolver source edits, installation, or the desktop test runs in this step.

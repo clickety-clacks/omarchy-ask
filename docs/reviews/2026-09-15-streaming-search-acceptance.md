@@ -1,10 +1,10 @@
 # Whole-scope streaming search acceptance
 
-Owner: Ask main. Status: **accepted and installed on lumen**.
+Owner: Ask main. Status: **accepted and installed on the desktop**.
 
 Contract: [architecture-file-search.md](../architecture-file-search.md).
 Independent static review: [Sol review](2026-09-15-streaming-search-sol-review.md).
-Runtime regression tests run on Testbed only. The resolver library is unchanged.
+Runtime regression tests run on the test machine only. The resolver library is unchanged.
 
 ## Original failure
 
@@ -57,12 +57,12 @@ snapshot. It does not send model prompts or activate the user's agents.
 
 ## Final evidence and delivery
 
-Final runtime stage: `/tmp/ask-streaming-final.6pJUGT` on Testbed, with fresh
+Final runtime stage: `/tmp/ask-streaming-final.6pJUGT` on the test machine, with fresh
 `npm ci --no-audit --no-fund` from the lockfile (136 packages). The parent ran:
 
 ```sh
 ASK_BUFFERED_BASELINE=/tmp/ask-streaming-acceptance.fG3Vem/baseline/files.js \
-  ASK_RUNTIME_HOST=testbed node --test tests/*.test.mjs tests/*.test.cjs bridge/image-paste.test.js
+  ASK_RUNTIME_HOST=test-machine node --test tests/*.test.mjs tests/*.test.cjs bridge/image-paste.test.js
 ```
 
 Result: **117 passed, 0 failed, 5 opt-in skips**, 122 total, on the final
@@ -108,6 +108,6 @@ file matches the immutable build snapshot; the installed git worktree is
 clean. Both `ask.json` and `shell.json` are byte-identical to their backups.
 The new shell (PID 2154309) reports `ok`, Ask is enabled, Hyprland reports no
 configuration errors, and the new process's startup log has no Ask/QML errors.
-No runtime regressions were executed on lumen. A post-install receipt is at
+No runtime regressions were executed on the desktop. A post-install receipt is at
 `~/.local/state/ask-streaming-install-68a6d08.json`; this delivery note
 was added to the development checkout after the immutable build was created.

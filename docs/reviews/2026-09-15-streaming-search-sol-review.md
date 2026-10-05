@@ -120,7 +120,7 @@ Ask main reports a fresh npm-install stage at
 `/tmp/ask-streaming-final.6pJUGT` against the exact production hashes above:
 
 - broad suite: **117 passed, 0 failed, 5 intentional skips (122 total)** in
-  13.6 seconds on Testbed;
+  13.6 seconds on the test machine;
 - the buffered negative control passed;
 - canonical-root-prefix and no-index reversed multi-term regressions passed;
 - two separate real Conversation UI gates passed against
