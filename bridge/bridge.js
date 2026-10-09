@@ -60,6 +60,11 @@ async function loadSettings() {
 
 async function savePermissionMode(mode) {
   const nextMode = mode === "yolo" ? "yolo" : "permission";
+  if (agentName === "codex" && connection && sessionId)
+    await connection.setSessionMode({
+      sessionId,
+      modeId: nextMode === "yolo" ? "agent-full-access" : "read-only",
+    });
   await mkdir(settingsDir, { recursive: true });
   // The UI writes its own keys (font scale) to this file. Merge rather than
   // replace so toggling the mode cannot drop them.
@@ -246,6 +251,11 @@ async function start() {
     } : {}),
   });
   sessionId = session.sessionId;
+  if (agentName === "codex")
+    await connection.setSessionMode({
+      sessionId,
+      modeId: permissionMode === "yolo" ? "agent-full-access" : "read-only",
+    });
   await applyRequestedModel(session.configOptions || []);
   emit({
     type: "ready",
