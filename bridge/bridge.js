@@ -9,6 +9,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolveHarness, resolveExecutable } from "./harness-policy.js";
 import { explainHarnessError, needsNewSession } from "./harness-errors.js";
 import { readClipboard } from "./image-paste.js";
+import { agentModeFor } from "./permission-mode.js";
 import {
   ClientSideConnection,
   PROTOCOL_VERSION,
@@ -60,11 +61,7 @@ async function loadSettings() {
 
 async function savePermissionMode(mode) {
   const nextMode = mode === "yolo" ? "yolo" : "permission";
-  if (agentName === "codex" && connection && sessionId)
-    await connection.setSessionMode({
-      sessionId,
-      modeId: nextMode === "yolo" ? "agent-full-access" : "read-only",
-    });
+  await applyAgentMode(nextMode);
   await mkdir(settingsDir, { recursive: true });
   // The UI writes its own keys (font scale) to this file. Merge rather than
   // replace so toggling the mode cannot drop them.
@@ -78,6 +75,13 @@ async function savePermissionMode(mode) {
     mode: 0o600,
   });
   permissionMode = nextMode;
+}
+
+async function applyAgentMode(mode) {
+  const modeId = agentModeFor(mode, sessionModes);
+  if (!connection || !sessionId || !modeId) return;
+  await connection.setSessionMode({ sessionId, modeId });
+  sessionModes = { ...sessionModes, currentModeId: modeId };
 }
 
 function emit(event) {
@@ -170,6 +174,7 @@ const pendingPermissions = new Map();
 let permissionSequence = 0;
 let sessionId = null;
 let connection = null;
+let sessionModes = null;
 let turnRunning = false;
 let steeringSupported = false;
 let imagePromptSupported = false;
@@ -251,11 +256,10 @@ async function start() {
     } : {}),
   });
   sessionId = session.sessionId;
-  if (agentName === "codex")
-    await connection.setSessionMode({
-      sessionId,
-      modeId: permissionMode === "yolo" ? "agent-full-access" : "read-only",
-    });
+  sessionModes = session.modes || null;
+  await applyAgentMode(permissionMode).catch((error) => {
+    emit({ type: "status", text: `Agent permission mode not applied: ${error.message}` });
+  });
   await applyRequestedModel(session.configOptions || []);
   emit({
     type: "ready",

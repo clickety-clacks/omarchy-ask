@@ -60,6 +60,12 @@ The durable mode is `permission` or `yolo`, stored in
 `~/.config/omarchy/ask.json`. Missing, malformed, or unknown values resolve to
 `permission`.
 
+- The bridge sets the agent's own ACP session mode to match, at session start
+  and on every switch, chosen by the adapter's advertised mode kind: YOLO
+  selects the `full_access` mode (`agent-full-access` in codex-acp,
+  `bypassPermissions` in claude-agent-acp) and Ask selects a `standard` mode
+  (`read-only` / `default`). Adapters otherwise start in their own default;
+  codex-acp's is an automatic reviewer that rejects tools without asking Ask.
 - Ask mode queues every ACP permission request and requires an explicit button
   or `Y` / `N` response.
 - YOLO selects only an option whose kind is exactly `allow_once`.

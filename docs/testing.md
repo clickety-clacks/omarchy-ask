@@ -10,7 +10,7 @@ From the repository root:
 
 ```sh
 node --check bridge/bridge.js
-node --test bridge/harness-policy.test.js bridge/harness-errors.test.js
+node --test bridge/harness-policy.test.js bridge/harness-errors.test.js bridge/permission-mode.test.js
 node --test tests/search-settings.test.cjs tests/agentd-hub-bridge.test.mjs tests/agent-window-resolver.test.mjs
 node --test tests/resolver-process-cleanup.test.mjs tests/agentd-hub-snapshot.test.mjs
 node --test tests/transport-policy.test.mjs tests/agent-launch-roundtrip.test.mjs
