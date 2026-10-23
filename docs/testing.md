@@ -4,13 +4,14 @@ Omarchy Ask currently uses a focused manual integration suite because its most
 important behavior crosses Quickshell, Hyprland, Node, and a real ACP adapter.
 Run this checklist on Omarchy Quattro before a release.
 
-## Static checks
+## Automated and static checks
 
 From the repository root:
 
 ```sh
 node --check bridge/bridge.js
-node --test bridge/harness-policy.test.js bridge/harness-errors.test.js bridge/permission-mode.test.js
+# Also covers image data/file paste, ordinary text, MIME mismatches, and size limits.
+node --test bridge/harness-policy.test.js bridge/harness-errors.test.js bridge/permission-mode.test.js bridge/image-paste.test.js
 node --test tests/search-settings.test.cjs tests/agentd-hub-bridge.test.mjs tests/agent-window-resolver.test.mjs
 node --test tests/resolver-process-cleanup.test.mjs tests/agentd-hub-snapshot.test.mjs
 node --test tests/transport-policy.test.mjs tests/agent-launch-roundtrip.test.mjs
@@ -290,7 +291,8 @@ not product resolver setup. See
 [`real-mosh acceptance`](reviews/2026-09-14-real-mosh-acceptance.md) for the
 passed run, exact scope, and cleanup evidence.
 
-- Static checks pass.
+- Static and automated checks pass, including image data/file paste, ordinary
+  text paste, supported formats, and size limits.
 - No QML errors appear during open, permission, pin, second-open, or close.
 - Ask remains the safe default on a clean settings directory.
 - The exact open → pin → one shortcut sequence succeeds.

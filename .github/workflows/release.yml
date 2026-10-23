@@ -52,7 +52,7 @@ jobs:
         with:
           node-version: 22
 
-      - name: Run bridge regression tests
+      - name: Run bridge, image-paste, and integration regression tests
         run: |
           npm ci --ignore-scripts --prefix bridge
           node --test bridge/harness-policy.test.js bridge/harness-errors.test.js \
